@@ -92,13 +92,16 @@ se exponen interruptores (`setUsbHostEnable`, `FUNC_T_UDISK_*`), `pedk.usbh` no 
 de ficheros y `getFileList` no existe. La única salida y entrada de datos es HTTP contra
 un PC de la misma red.
 
-En el PC (hace falta Python, ya viene en la mayoría de instalaciones):
+En el PC: **doble clic en `herramientas/Respaldo impresora.bat`** (o, desde una consola,
+`python herramientas/respaldo-servidor.py`). Hace falta Python; se comprueba con
+`python --version`.
 
-```bash
-python herramientas/respaldo-servidor.py
-```
+**La primera vez Windows preguntará si permite el acceso**: hay que decir **sí, en redes
+privadas**. Si se deniega, la impresora no llega al PC y el respaldo falla siempre.
 
-Imprime la IP que hay que teclear. En la impresora: **Ajustes → Respaldo → Poner IP del
+La ventana imprime la IP que hay que teclear, y hay que **dejarla abierta**: mientras esté
+abierta, la impresora puede respaldar. Para que arranque con el PC, se pone un acceso
+directo al `.bat` en la carpeta que abre `shell:startup` (Win+R). En la impresora: **Ajustes → Respaldo → Poner IP del
 PC**. A partir de ahí:
 
 | En el panel | Qué hace |
@@ -151,6 +154,7 @@ Instalar `build/impresion-pin-BM5220ADW_signed.tar` con **PEDK Installer**.
 | `src/explorar.js` | Vuelca la fuente del firmware y prueba la memoria (sólo diagnóstico) |
 | `src/respaldo.js` | Respaldo por red: exportar todo e importar usuarios |
 | `herramientas/respaldo-servidor.py` | El que se lanza en el PC y guarda los respaldos |
+| `herramientas/Respaldo impresora.bat` | Lanzador de doble clic para Windows |
 | `src/cerradura.js` | Interruptores del equipo, con relectura |
 | `src/sesion.js` | Sesión abierta y a quién se carga cada trabajo |
 | `src/historial.js` | Lee el historial y entrega los trabajos nuevos una sola vez |
