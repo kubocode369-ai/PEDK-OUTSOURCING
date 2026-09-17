@@ -146,6 +146,37 @@ export function makePedk(opts = {}) {
         delete Object.load;
     }
 
+    /**
+     * `pedk.net.http`, para el respaldo. El callback se llama EN EL ACTO y no en otra
+     * vuelta del bucle: así las pruebas leen el resultado sin esperas. `error` llega
+     * con "200 OK" también cuando va bien, como dice la doc del SDK — por eso la app
+     * mira `resp.code` y no si `error` está vacío.
+     *
+     * `opts.red` manda: {respuestas: {'/ruta': {code, body}}, caida: true}
+     */
+    const peticiones = [];
+    const red = {
+        http: {
+            Headers: function (k, v) { this.k = k; this.v = v; },
+            RequestBody: function (data) { this.data = data; },
+            Request: function (url, method, headers, body) {
+                this.url = url; this.method = method; this.headers = headers; this.body = body;
+            },
+            fetchData: (req, cb) => {
+                peticiones.push({ url: req.url, method: req.method, cuerpo: req.body && req.body.data });
+                const conf = opts.red || {};
+                if (conf.caida) {
+                    cb('Connection refused', null);
+                    return 'EXIT_SUCCESS';
+                }
+                const ruta = String(req.url).replace(/^http:\/\/[^/]*/, '');
+                const r = (conf.respuestas && conf.respuestas[ruta]) || { code: 200, body: {} };
+                cb('200 OK', { code: r.code, body: r.body, headers: null });
+                return 'EXIT_SUCCESS';
+            },
+        },
+    };
+
     /* ---- historial, con la forma leída del equipo ---- */
     let seq = opts.primerId || 110;
     const historial = [];
@@ -254,6 +285,7 @@ export function makePedk(opts = {}) {
     const pedk = {
         ui: { widget: { Screen, Label, Button, StyleSheet }, ScreenCtrl, KeyCtrl },
         device: { setting, storage, powersave: { getCurrentState: () => 0 } },
+        net: red,
         jobctl,
         jobs: { print },
     };
@@ -267,6 +299,8 @@ export function makePedk(opts = {}) {
         getStore: () => store,
         /** Los ficheros de Object.save, tal como quedaron. */
         getFicheros: () => ficheros,
+        /** Las peticiones HTTP que hizo la app: [{url, method, cuerpo}]. */
+        peticiones: () => peticiones,
         /** El equipo vuelve a dejar leer la memoria (como si hubiera despertado). */
         memoriaResponde: () => { memoriaFalla = null; },
         /** Borra sólo los ficheros: imita una reinstalación si no sobreviven. */

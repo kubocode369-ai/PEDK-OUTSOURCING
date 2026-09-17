@@ -4,3 +4,7 @@ build/
 .tmp/
 test/.build/
 *.key
+
+# Los respaldos llevan las huellas de los PIN: nunca al repositorio.
+herramientas/respaldos/
+herramientas/usuarios.json

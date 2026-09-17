@@ -28,6 +28,7 @@ import * as sesion from './sesion.js';
 import * as retencion from './retencion.js';
 import * as diagnostico from './diagnostico.js';
 import * as vigia from './vigia.js';
+import * as respaldo from './respaldo.js';
 import { abrirAjustes } from './ajustes.js';
 
 const { ScreenCtrl, KeyCtrl } = pedk.ui;
@@ -566,6 +567,9 @@ function arrancar() {
         vigia.iniciar();
         vigia.guardian(decidirGuardian);
     } catch (e) { console.log('[arranque] vigía: ' + (e && e.message)); }
+    try {
+        respaldo.automatico();
+    } catch (e) { console.log('[arranque] respaldo: ' + (e && e.message)); }
 
     setInterval(guard('reloj', () => {
         if (sesion.vencida()) {
@@ -582,7 +586,8 @@ function arrancar() {
     const a = store.ajustes();
     console.log('[arranque] listo · modo ' + a.modo + ' · bloqueo ' + (a.bloqueoActivo ? 'ON' : 'off')
         + ' · impresión desde PC ' + (bloqueado === null ? '¿?' : bloqueado ? 'bloqueada' : 'abierta')
-        + ' · usuarios ' + store.usuarios().length);
+        + ' · usuarios ' + store.usuarios().length
+        + ' · respaldo ' + (respaldo.destino() || 'apagado'));
 }
 
 try {

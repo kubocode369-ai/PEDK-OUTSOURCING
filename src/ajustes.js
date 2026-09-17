@@ -14,6 +14,7 @@ import * as store from './store.js';
 import * as cerradura from './cerradura.js';
 import * as sesion from './sesion.js';
 import * as retencion from './retencion.js';
+import * as respaldo from './respaldo.js';
 import { abrirDiagnostico } from './diagnostico.js';
 
 let alSalir = null;
@@ -54,6 +55,8 @@ function render() {
         case 'usuarios': return renderUsuarios();
         case 'nombre': return renderNombre();
         case 'pin': return renderPin();
+        case 'respaldo': return renderRespaldo();
+        case 'respaldoIp': return renderRespaldoIp();
         case 'contadores': return renderContadores();
         case 'registro': return renderRegistro();
         default: return renderMenu();
@@ -71,10 +74,12 @@ function renderMenu() {
     w.push(etiqueta('t', 12, 8, 300, 22, 'Ajustes', COLOR.texto));
     w.push(boton('salir', 376, 6, 92, 30, 'Salir', COLOR.acento, () => alSalir && alSalir()));
 
+    // Seis filas apretadas para que quepa Respaldo sin sacrificar nada de lo que ya
+    // había. El aviso y el mensaje bajan en consecuencia.
     const col = (i) => (i === 0 ? 12 : 244);
-    const fila = (i) => 44 + i * 40;
+    const fila = (i) => 40 + i * 38;
     const W = 224;
-    const H = 34;
+    const H = 32;
 
     w.push(boton('usuarios', col(0), fila(0), W, H, 'Usuarios (' + store.usuarios().length + ')', COLOR.acento, () => ir('usuarios')));
     w.push(boton('contadores', col(1), fila(0), W, H, 'Contadores', COLOR.acento, () => ir('contadores')));
@@ -97,10 +102,14 @@ function renderMenu() {
     })));
     w.push(boton('abrir', col(1), fila(4), W, H, 'Desbloquear equipo', COLOR.peligro, desbloquearTodo));
 
+    const ip = respaldo.destino();
+    w.push(boton('respaldo', col(0), fila(5), W, H, ip ? 'Respaldo: ' + ip : 'Respaldo: apagado',
+        ip ? COLOR.acento : COLOR.aviso, () => ir('respaldo')));
+
     const aviso = store.pinAdminDeFabrica() ? 'PIN de admin de fábrica: cámbielo' : estadoCerradura();
-    w.push(etiqueta('st', 12, 250, 456, 20, recortar(aviso, 62),
+    w.push(etiqueta('st', 12, 270, 456, 20, recortar(aviso, 62),
         store.pinAdminDeFabrica() ? COLOR.aviso : COLOR.tenue));
-    w.push(etiqueta('msg', 12, 276, 456, 40, recortar(mensaje, 62), colorMensaje));
+    w.push(etiqueta('msg', 12, 292, 456, 24, recortar(mensaje, 62), colorMensaje));
     return w;
 }
 
@@ -330,6 +339,108 @@ function teclaPin(t) {
         }
     }
     repintar();
+}
+
+/* ------------------------------------------------------------------ */
+/* Respaldo por red                                                     */
+/* ------------------------------------------------------------------ */
+
+function renderRespaldo() {
+    ambito('ajb');
+    const e = respaldo.estado();
+    const w = [pantalla()];
+    w.push(etiqueta('t', 12, 8, 300, 22, 'Respaldo por red', COLOR.texto));
+    w.push(boton('volver', 376, 6, 92, 30, 'Volver', COLOR.acento, () => ir('menu')));
+
+    w.push(etiqueta('d', 12, 40, 456, 20,
+        e.destino ? 'PC de respaldo: ' + e.destino + ':' + config.RESPALDO_PUERTO : 'Sin PC configurado: el respaldo está apagado',
+        e.destino ? COLOR.texto : COLOR.aviso));
+    w.push(etiqueta('u', 12, 62, 456, 20, 'Último: ' + recortar((e.ultimo.cuando ? e.ultimo.cuando + ' · ' : '') + e.ultimo.detalle, 60),
+        e.ultimo.ok === null ? COLOR.tenue : e.ultimo.ok ? COLOR.ok : COLOR.peligro));
+    w.push(etiqueta('n', 12, 84, 456, 20, 'Se respalda solo cada ' + Math.round(config.RESPALDO_AUTO_MS / 60000)
+        + ' min si hay cambios', COLOR.tenue));
+
+    w.push(boton('ip', 12, 112, 224, 34, e.destino ? 'Cambiar IP del PC' : 'Poner IP del PC', COLOR.acento,
+        () => ir('respaldoIp')));
+    w.push(boton('apagar', 244, 112, 224, 34, 'Apagar respaldo', COLOR.suave, () => {
+        respaldo.fijarDestino(null);
+        decir('Respaldo apagado', COLOR.aviso);
+        repintar();
+    }));
+
+    w.push(boton('subir', 12, 152, 224, 40, 'Respaldar ahora', COLOR.ok, () => {
+        if (!e.destino) {
+            decir('Ponga primero la IP del PC', COLOR.peligro);
+            repintar();
+            return;
+        }
+        decir('Enviando…', COLOR.suave);
+        repintar();
+        respaldo.exportar((r) => {
+            decir(r.detalle, r.ok ? COLOR.ok : COLOR.peligro);
+            repintar();
+        });
+    }));
+
+    // Importar pide un segundo toque: trae usuarios de fuera y cambia PIN.
+    w.push(boton('bajar', 244, 152, 224, 40, confirmar === 'bajar' ? '¿Seguro? Toque otra vez' : 'Traer usuarios del PC',
+        confirmar === 'bajar' ? COLOR.peligro : COLOR.acento, () => {
+        if (!e.destino) {
+            decir('Ponga primero la IP del PC', COLOR.peligro);
+            repintar();
+            return;
+        }
+        if (confirmar !== 'bajar') {
+            confirmar = 'bajar';
+            decir('Dará de alta los usuarios del fichero del PC', COLOR.aviso);
+            repintar();
+            return;
+        }
+        confirmar = null;
+        decir('Leyendo del PC…', COLOR.suave);
+        repintar();
+        respaldo.importar((r) => {
+            decir(r.detalle, r.ok ? COLOR.ok : COLOR.peligro);
+            repintar();
+        });
+    }));
+
+    w.push(etiqueta('a', 12, 200, 456, 20, 'El respaldo lleva los PIN: guárdelo como tal', COLOR.aviso));
+    w.push(etiqueta('c', 12, 222, 456, 40, 'En el PC: herramientas/respaldo-servidor.py', COLOR.tenue));
+    w.push(etiqueta('msg', 12, 268, 456, 44, recortar(mensaje, 62), colorMensaje));
+    return w;
+}
+
+function renderRespaldoIp() {
+    ambito('ajip');
+    const w = [pantalla()];
+    w.push(etiqueta('t', 12, 6, 220, 22, 'IP del PC de respaldo', COLOR.texto));
+    w.push(boton('cancelar', 238, 4, 110, 32, 'Cancelar', COLOR.suave, () => ir('respaldo')));
+    w.push(boton('seguir', 356, 4, 112, 32, 'Guardar', COLOR.ok, () => {
+        if (!respaldo.fijarDestino(borrador)) {
+            decir('Escriba una IP como 192.168.1.50', COLOR.peligro);
+            repintar();
+            return;
+        }
+        ir('respaldo');
+        decir('PC de respaldo: ' + borrador, COLOR.ok);
+        repintar();
+    }));
+    w.push(etiqueta('v', 12, 44, 456, 30, borrador || '_', COLOR.acento, 'center'));
+    w.push(etiqueta('h', 12, 78, 456, 20, 'Sólo la IP; el puerto es el ' + config.RESPALDO_PUERTO,
+        COLOR.tenue, 'center'));
+    w.push(etiqueta('msg', 12, 100, 456, 20, recortar(mensaje, 62), colorMensaje, 'center'));
+    // El teclado de texto trae dígitos y el punto: sirve para una IP.
+    w.push(...tecladoTexto('kb', 156, (t) => {
+        if (t === '<') {
+            borrador = borrador.slice(0, -1);
+        } else if (/^[0-9.]$/.test(t) && borrador.length < 15) {
+            borrador += t;
+        }
+        decir('', COLOR.suave);
+        repintar();
+    }));
+    return w;
 }
 
 /* ------------------------------------------------------------------ */

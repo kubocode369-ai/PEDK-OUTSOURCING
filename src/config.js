@@ -54,4 +54,23 @@ export const config = {
     FILAS_POR_PAGINA: 4,
     REGISTRO_MAX: 60,
     VISTOS_MAX: 200,
+
+    /**
+     * RESPALDO POR RED. El equipo no puede leer ni escribir en una flash USB (sólo
+     * enciende y apaga el puerto: medido el 17-09-2026), así que la única salida y
+     * entrada de datos es HTTP contra un PC de la misma red. Ver herramientas/
+     * respaldo-servidor.py, que atiende las dos rutas.
+     *
+     * Sólo se teclea la IP en el panel: el puerto y las rutas son fijos, porque el
+     * teclado de texto no tiene ':' ni '/'.
+     */
+    RESPALDO_PUERTO: 8099,
+    /** Donde se manda el respaldo completo (POST con el JSON). */
+    RESPALDO_RUTA_SUBIR: '/respaldo',
+    /** De donde se leen los usuarios a importar (GET). */
+    RESPALDO_RUTA_USUARIOS: '/usuarios.json',
+    /** Cada cuánto se intenta el respaldo automático, si hay algo nuevo que guardar. */
+    RESPALDO_AUTO_MS: 30 * 60 * 1000,
+    /** Margen tras arrancar antes del primer respaldo: que la red esté lista. */
+    RESPALDO_ESPERA_INICIAL_MS: 60 * 1000,
 };

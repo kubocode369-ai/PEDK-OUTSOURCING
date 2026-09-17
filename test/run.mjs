@@ -109,6 +109,112 @@ hablar(); console.log('· Usuarios y PIN'); silenciar();
 }
 
 /* ------------------------------------------------------------------ */
+hablar(); console.log('· Respaldo por red: exportar e importar'); silenciar();
+{
+    const respaldo = await import('./.build/respaldo.mjs');
+
+    equipo();
+    respaldo.detener();
+    store.agregarUsuario('ana', '1234');
+    store.contar('ana', { tipo: 'PRINT', paginas: 6 });
+    hablar();
+    check('sin IP no se exporta', !respaldo.exportar() && /sin IP/.test(respaldo.estado().ultimo.detalle),
+        respaldo.estado().ultimo.detalle);
+    check('rechaza una IP mal escrita', !respaldo.fijarDestino('192.168.1') && !respaldo.fijarDestino('1.2.3.999')
+        && !respaldo.fijarDestino('mipc'));
+    check('acepta una IP buena', respaldo.fijarDestino('192.168.1.50') && respaldo.destino() === '192.168.1.50');
+    check('la IP sobrevive a un reinicio', (() => { store._recargar(); return respaldo.destino() === '192.168.1.50'; })());
+    silenciar();
+
+    let r = null;
+    respaldo.exportar((x) => { r = x; });
+    const env = mock.peticiones()[mock.peticiones().length - 1];
+    hablar();
+    check('exporta por POST a la ruta y puerto correctos',
+        env.method === 'POST' && env.url === 'http://192.168.1.50:8099/respaldo', env.url + ' ' + env.method);
+    check('el respaldo lleva usuarios, huellas y contadores',
+        env.cuerpo.usuarios.length === 1 && !!env.cuerpo.usuarios[0].huella
+        && env.cuerpo.contadores.ana.paginas === 6, JSON.stringify(env.cuerpo).slice(0, 80));
+    check('y avisa de que fue bien', r && r.ok, JSON.stringify(r));
+    silenciar();
+
+    // El PC apagado no puede romper nada ni dejar el respaldo colgado.
+    const caido = makePedk({ red: { caida: true } });
+    globalThis.pedk = caido.pedk;
+    store._recargar();
+    respaldo.fijarDestino('192.168.1.50');
+    let r2 = null;
+    respaldo.exportar((x) => { r2 = x; });
+    hablar();
+    check('si el PC está apagado, falla sin romper', r2 && !r2.ok, JSON.stringify(r2));
+    // Un fallo no debe dejar el respaldo "en curso" para siempre: eso lo bloquearía.
+    check('un fallo no deja el respaldo bloqueado', !respaldo.estado().enCurso);
+    r2 = null;
+    respaldo.exportar((x) => { r2 = x; });
+    check('y el reintento vuelve a intentarlo de verdad', r2 !== null, JSON.stringify(r2));
+    silenciar();
+
+    // Importar: el fichero del PC da de alta a la gente.
+    const conUsuarios = makePedk({ red: { respuestas: { '/usuarios.json': { code: 200, body: {
+        usuarios: [
+            { nombre: 'luis', pin: '4321' },
+            { nombre: 'MARIA', pin: '1111' },
+            { nombre: 'ana', pin: '9999' },
+            { nombre: 'no valido!', pin: '1234' },
+            { nombre: 'sinpin' },
+        ],
+    } } } } });
+    globalThis.pedk = conUsuarios.pedk;
+    store._recargar();
+    store.agregarUsuario('ana', '1234');
+    respaldo.fijarDestino('10.0.0.7');
+    let r3 = null;
+    respaldo.importar((x) => { r3 = x; });
+    hablar();
+    check('importa por GET de /usuarios.json',
+        mock2Ultima(conUsuarios).url === 'http://10.0.0.7:8099/usuarios.json'
+        && mock2Ultima(conUsuarios).method === 'GET', mock2Ultima(conUsuarios).url);
+    check('da de alta a los nuevos y normaliza el nombre',
+        !!store.usuarios().filter((u) => u.nombre === 'luis')[0]
+        && !!store.usuarios().filter((u) => u.nombre === 'maria')[0],
+        JSON.stringify(store.usuarios().map((u) => u.nombre)));
+    check('el PIN importado funciona', store.validarUsuario('luis', '4321').ok);
+    check('actualiza el PIN de quien ya existía', store.validarUsuario('ana', '9999').ok
+        && !store.validarUsuario('ana', '1234').ok);
+    check('cuenta los mal escritos y no los da de alta', r3 && r3.detalle.indexOf('2 mal') >= 0,
+        JSON.stringify(r3));
+    check('NO borra a nadie que no venga en el fichero', store.usuarios().length === 3,
+        JSON.stringify(store.usuarios().map((u) => u.nombre)));
+    silenciar();
+
+    // Un fichero con un respaldo entero también vale para restaurar.
+    const desdeRespaldo = store.restaurarUsuarios({ usuarios: [{ nombre: 'pepe', huella: 'abc', activo: false }] });
+    hablar();
+    check('restaura desde un respaldo entero, con su huella', desdeRespaldo.creados === 1
+        && store.usuarios().filter((u) => u.nombre === 'pepe')[0].huella === 'abc');
+    check('y respeta el desactivado', store.usuarios().filter((u) => u.nombre === 'pepe')[0].activo === false);
+    silenciar();
+
+    // Basura por la red no debe dar de alta a nadie ni lanzar.
+    const basura = makePedk({ red: { respuestas: { '/usuarios.json': { code: 200, body: 'no soy json' } } } });
+    globalThis.pedk = basura.pedk;
+    store._recargar();
+    respaldo.fijarDestino('10.0.0.7');
+    let r4 = null;
+    respaldo.importar((x) => { r4 = x; });
+    hablar();
+    check('un fichero que no es JSON se rechaza sin romper', r4 && !r4.ok && store.usuarios().length === 0,
+        JSON.stringify(r4));
+    silenciar();
+    respaldo.detener();
+}
+
+function mock2Ultima(m) {
+    const p = m.peticiones();
+    return p[p.length - 1];
+}
+
+/* ------------------------------------------------------------------ */
 hablar(); console.log('· Los datos sobreviven a un reinicio'); silenciar();
 {
     // La prueba que faltaba desde el principio. El equipo devuelve un STRING en

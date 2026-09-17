@@ -65,6 +65,8 @@ function vacio() {
             bloquearCopia: false,
             minutosSesion: config.MINUTOS_SESION_DEFECTO,
             huellaAdmin: null,
+            /** IP del PC que recibe el respaldo; null = respaldo apagado. */
+            respaldoIp: null,
         },
     };
 }
@@ -224,6 +226,7 @@ function normalizar(d) {
             base.ajustes.minutosSesion = a.minutosSesion;
         }
         base.ajustes.huellaAdmin = a.huellaAdmin || null;
+        base.ajustes.respaldoIp = typeof a.respaldoIp === 'string' && a.respaldoIp ? a.respaldoIp : null;
     }
     return base;
 }
@@ -250,6 +253,7 @@ function guardar() {
         escrituraComprobada = true;
         comprobarEscritura(enFichero, enMemoria);
     }
+    revision++;
     return true;
 }
 
@@ -322,6 +326,100 @@ function comprobarEscritura(enFichero, enMemoria) {
     console.log('[store] primera escritura · fichero: ' + fichero + ' · memoria: ' + memoria);
 }
 
+/* ------------------------------------------------------------------ */
+/* Respaldo: sacar todo y volver a meterlo                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sube de uno en uno con cada guardado. Sirve para que el respaldo automático sepa si
+ * hay algo nuevo y no repita el mismo envío cada media hora.
+ */
+let revision = 0;
+
+export function revisionActual() {
+    return revision;
+}
+
+/**
+ * TODO lo guardado, para el respaldo. Incluye las huellas de los PIN: es lo que hace
+ * que el respaldo sirva para restaurar, y también lo que lo vuelve sensible. Una
+ * huella de un PIN de 4 dígitos se rompe probando las 10.000, así que este objeto
+ * vale lo mismo que la lista de PIN en claro.
+ */
+export function respaldo() {
+    const d = cargar();
+    return {
+        formato: 1,
+        app: 'impresion-pin-BM5220ADW',
+        revision,
+        usuarios: d.usuarios,
+        contadores: d.contadores,
+        registro: d.registro,
+        ajustes: d.ajustes,
+    };
+}
+
+/** Los contadores en la forma de un informe, sin nada secreto. */
+export function informeContadores() {
+    return {
+        formato: 1,
+        totales: totales(),
+        porPersona: contadores(),
+    };
+}
+
+/**
+ * Mete usuarios de un respaldo o de una lista preparada a mano.
+ *
+ * Acepta `{usuarios: [...]}` (un respaldo entero) o directamente `[...]`. Cada usuario
+ * vale con `huella` (viene de un respaldo: el PIN sigue siendo el de antes) o con
+ * `pin` (una lista escrita a mano: se calcula la huella aquí).
+ *
+ * NO borra a nadie: lo que ya existe se actualiza y lo que no, se crea. Borrar por
+ * error a toda la plantilla desde un fichero mal escrito es un daño que no compensa.
+ *
+ * @returns {{ok: boolean, creados: number, actualizados: number, malos: number, error?: string}}
+ */
+export function restaurarUsuarios(entrada) {
+    const lista = Array.isArray(entrada) ? entrada
+        : (entrada && Array.isArray(entrada.usuarios) ? entrada.usuarios : null);
+    if (!lista) {
+        return { ok: false, creados: 0, actualizados: 0, malos: 0, error: 'El fichero no trae una lista de usuarios' };
+    }
+    const d = cargar();
+    let creados = 0;
+    let actualizados = 0;
+    let malos = 0;
+    for (const u of lista) {
+        const n = normalizarUsuario(u && u.nombre);
+        const huellaNueva = u && u.huella ? String(u.huella)
+            : (u && pinValido(u.pin) ? huella(n, u.pin) : null);
+        if (!usuarioValido(n) || n === SIN_SESION || !huellaNueva) {
+            malos++;
+            continue;
+        }
+        const ya = d.usuarios.filter((x) => x.nombre === n)[0];
+        if (ya) {
+            ya.huella = huellaNueva;
+            ya.activo = u.activo === false ? false : true;
+            actualizados++;
+        } else {
+            d.usuarios.push({
+                nombre: n,
+                huella: huellaNueva,
+                activo: u.activo === false ? false : true,
+                creado: u.creado || new Date().toISOString(),
+            });
+            creados++;
+        }
+        intentos.delete(n);
+    }
+    if (creados || actualizados) {
+        guardar();
+    }
+    return { ok: creados + actualizados > 0, creados, actualizados, malos };
+}
+
 /** Solo para las pruebas: olvida la copia en memoria y relee del equipo. */
 export function _recargar() {
     cache = null;
@@ -330,6 +428,7 @@ export function _recargar() {
     motivo = null;
     ultimoIntento = 0;
     escrituraComprobada = false;
+    revision = 0;
 }
 
 /* ------------------------------------------------------------------ */
