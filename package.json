@@ -1,0 +1,29 @@
+{
+  "name": "impresion-pin-BM5220ADW",
+  "bundleName": "BM5220ADW-IMPRESION-PIN",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Imprimir solo con usuario y PIN en el panel, y contar lo que imprime cada persona",
+  "icon": "./resources/media/icon/app_icon.bmp",
+  "scripts": {
+    "build": "vite build && pedk-build",
+    "sign:dev": "pedk-sign --mode dev",
+    "sign:prod": "pedk-sign --mode prod",
+    "sign:hash": "pedk-sign --mode hash",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "vite": "^4.4.11"
+  },
+  "dependencies": {
+    "pedk": "file:lib/pedk-1.00.012.tgz"
+  },
+  "dev": {
+    "cert": "./sign/6e6667db10b94ba48c9c11bed46f25b5.crt",
+    "key": "./sign/6e6667db10b94ba48c9c11bed46f25b5.key"
+  },
+  "prod": {
+    "cert": "",
+    "sign": ""
+  }
+}
