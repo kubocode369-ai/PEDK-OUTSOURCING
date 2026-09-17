@@ -15,6 +15,34 @@ class Button {}
 
 let pantallaActual = [];
 
+/**
+ * Los listeners que el EQUIPO recuerda, en el orden en que se registraron.
+ *
+ * Medido en la BM5220ADW (Pedk1.log, 17-09-2026): `draw()` NO olvida los listeners de
+ * las pantallas anteriores. El firmware guarda una lista global y, al tocar, la
+ * recorre y dispara EL PRIMERO cuyo id coincida; en el log la lista todavía empieza
+ * por los widgets del inicio dibujados un minuto antes, y contiene ids repetidos.
+ *
+ * Lo que el log NO aclara es qué hace al redibujar un id que ya está: si refresca su
+ * callback o si deja ganando al viejo. Aquí se refresca, que es lo benigno. Así que
+ * esta lista no es la red de seguridad: la red es la comprobación de que ninguna
+ * pantalla comparte ids con otra (ver run.mjs). Con ids únicos el fallo no existe
+ * bajo ninguna de las dos interpretaciones, y por eso el arreglo va por ahí.
+ */
+let listeners = [];
+
+function registrar(widgets) {
+    for (const w of widgets) {
+        if (!(w instanceof Button)) continue;
+        const previo = listeners.filter((l) => l.id === w.id)[0];
+        if (previo) {
+            previo.cb = w.cb_released;
+        } else {
+            listeners.push({ id: w.id, cb: w.cb_released });
+        }
+    }
+}
+
 class ScreenCtrl {
     draw(widgets) {
         if (!Array.isArray(widgets)) throw new Error('draw() sin lista');
@@ -33,12 +61,17 @@ class ScreenCtrl {
             }
         }
         pantallaActual = widgets;
+        registrar(widgets);
     }
     setScreenBrightness() {}
 }
 class KeyCtrl { setCallBackFunc() {} }
 
 export function makePedk(opts = {}) {
+    // Ni la pantalla ni los listeners se borran al cambiar de equipo simulado: el
+    // recorrido del panel cambia el equipo bajo los pies de una app que sigue viva, y
+    // es justo lo que pasa en la impresora (la app no se reinicia con cada trabajo).
+
     /* ---- interruptores ---- */
     const exportados = opts.exportados || ['FUNC_T_NET_PRINT', 'FUNC_T_USBPORT_PRINT', 'FUNC_T_COPY',
         'FUNC_T_IDCOPY', 'FUNC_T_BILL', 'FUNC_T_SECURE_PRINT'];
@@ -192,12 +225,30 @@ export function makePedk(opts = {}) {
         imprimir: agregar,
         pantalla: () => pantallaActual,
         textos: () => pantallaActual.filter((w) => w instanceof Label || w instanceof Button).map((w) => w.text).join(' | '),
-        /** Pulsa el botón con ese id, o el primero cuyo texto sea exactamente ése. */
-        pulsar: (idOTexto) => {
-            const b = pantallaActual.filter((w) => w instanceof Button && w.id === idOTexto)[0]
-                || pantallaActual.filter((w) => w instanceof Button && w.text === idOTexto)[0];
-            if (!b) throw new Error('no hay botón "' + idOTexto + '" en: ' + pantallaActual.filter((w) => w instanceof Button).map((w) => w.id).join(','));
-            b.cb_released();
+        /** Ids de los botones visibles ahora mismo. */
+        botones: () => pantallaActual.filter((w) => w instanceof Button).map((w) => w.id),
+        /**
+         * Toca un botón como lo haría una persona: se elige entre los VISIBLES (por id
+         * completo, por id sin el prefijo de ámbito, o por texto exacto) y luego se
+         * dispara a quien llamaría el equipo: el primer listener con ese id.
+         *
+         * Si el id del botón visible está pisado por otra pantalla, aquí se ejecuta el
+         * callback de la otra: exactamente el fallo del equipo.
+         */
+        pulsar: (sel) => {
+            const visibles = pantallaActual.filter((w) => w instanceof Button);
+            const porId = visibles.filter((w) => w.id === sel);
+            const porSufijo = visibles.filter((w) => w.id.endsWith('_' + sel));
+            const porTexto = visibles.filter((w) => w.text === sel);
+            const cand = porId.length ? porId : porSufijo.length ? porSufijo : porTexto;
+            if (cand.length === 0) {
+                throw new Error('no hay botón "' + sel + '" en: ' + visibles.map((w) => w.id).join(','));
+            }
+            if (cand.length > 1) {
+                throw new Error('botón "' + sel + '" ambiguo: ' + cand.map((w) => w.id).join(','));
+            }
+            const l = listeners.filter((x) => x.id === cand[0].id)[0];
+            (l ? l.cb : cand[0].cb_released)();
         },
     };
 }

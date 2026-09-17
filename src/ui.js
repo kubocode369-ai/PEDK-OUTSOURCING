@@ -20,13 +20,39 @@ export const COLOR = {
     peligro: '#c8102e',
 };
 
+/**
+ * ÁMBITO DE IDS. Medido en la BM5220ADW (17-09-2026, Pedk1.log): el firmware NO
+ * olvida los listeners de las pantallas anteriores. Guarda una lista global y, al
+ * tocar, la recorre y dispara EL PRIMERO cuyo id coincida. En el log se ve cómo,
+ * estando en "Nuevo usuario", la lista empieza por los widgets de la pantalla de
+ * inicio (`estado`, `paso0`, `paso1`) dibujados un minuto antes.
+ *
+ * Consecuencia: dos pantallas con un mismo id se pisan para siempre. El "Siguiente"
+ * de Ajustes > Nuevo usuario ejecutaba el "Siguiente" del login (mismo id `seguir`,
+ * registrado antes), que validaba un usuario vacío y volvía atrás: la pantalla del
+ * PIN no llegaba a abrirse nunca.
+ *
+ * Por eso cada pantalla declara su ámbito como PRIMERA línea de su render, y aquí se
+ * le pega a cada id. Los ids quedan únicos en toda la app, no sólo dentro de una
+ * pantalla. La prueba del panel lo comprueba (mock-pedk imita esta lista global).
+ */
+let prefijo = '';
+
+export function ambito(nombre) {
+    prefijo = nombre ? nombre + '_' : '';
+}
+
+function idDe(id) {
+    return prefijo + id;
+}
+
 export function pantalla() {
     return new Screen();
 }
 
 export function etiqueta(id, x, y, w, h, texto, color, alineacion) {
     const l = new Label();
-    l.id = id;
+    l.id = idDe(id);
     l.x = x; l.y = y; l.w = w; l.h = h;
     l.text = texto === null || texto === undefined ? '' : String(texto);
     l.style_sheet = new StyleSheet();
@@ -38,13 +64,13 @@ export function etiqueta(id, x, y, w, h, texto, color, alineacion) {
 
 export function boton(id, x, y, w, h, texto, color, alPulsar) {
     const b = new Button();
-    b.id = id;
+    b.id = idDe(id);
     b.x = x; b.y = y; b.w = w; b.h = h;
     b.text = texto === null || texto === undefined ? '' : String(texto);
     b.style_sheet = new StyleSheet();
     b.style_sheet.text_align = 'center';
     b.style_sheet.text_color = color || COLOR.texto;
-    b.cb_released = guard(id, alPulsar);
+    b.cb_released = guard(b.id, alPulsar);
     return b;
 }
 

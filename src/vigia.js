@@ -16,7 +16,7 @@
  * Se escucha con `addJobListener` y la lista sólo se lee al pulsar un botón.
  */
 import { guard } from './guard.js';
-import { COLOR, boton, etiqueta, pantalla, recortar } from './ui.js';
+import { COLOR, ambito, boton, etiqueta, pantalla, recortar } from './ui.js';
 import { mostrar, repintar, pantallaActiva } from './router.js';
 
 const MAX_EVENTOS = 30;
@@ -293,6 +293,7 @@ function decir(texto, color) {
 }
 
 function render() {
+    ambito('vg');
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 340, 22, 'Trabajos que llegan', COLOR.texto));
     w.push(boton('volver', 376, 6, 92, 30, 'Volver', COLOR.acento, () => alVolver && alVolver()));

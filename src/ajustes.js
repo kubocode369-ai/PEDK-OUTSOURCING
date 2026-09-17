@@ -8,7 +8,7 @@
  * interruptores del equipo no se restauran solos al quitarla).
  */
 import { config } from './config.js';
-import { COLOR, boton, etiqueta, pantalla, paginador, paginar, recortar, tecladoNumerico, tecladoTexto } from './ui.js';
+import { COLOR, ambito, boton, etiqueta, pantalla, paginador, paginar, recortar, tecladoNumerico, tecladoTexto } from './ui.js';
 import { mostrar, repintar } from './router.js';
 import * as store from './store.js';
 import * as cerradura from './cerradura.js';
@@ -65,6 +65,7 @@ function render() {
 /* ------------------------------------------------------------------ */
 
 function renderMenu() {
+    ambito('ajm');
     const a = store.ajustes();
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 300, 22, 'Ajustes', COLOR.texto));
@@ -192,6 +193,7 @@ function desbloquearTodo() {
 /* ------------------------------------------------------------------ */
 
 function renderUsuarios() {
+    ambito('aju');
     const info = paginar(store.usuarios(), pagina, config.FILAS_POR_PAGINA);
     pagina = info.pagina;
     const w = [pantalla()];
@@ -232,6 +234,7 @@ function renderUsuarios() {
 }
 
 function renderNombre() {
+    ambito('ajn');
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 6, 200, 22, 'Nombre de usuario', COLOR.texto));
     w.push(boton('cancelar', 238, 4, 110, 32, 'Cancelar', COLOR.suave, () => ir('usuarios')));
@@ -282,6 +285,7 @@ function pedirPin(destino) {
 }
 
 function renderPin() {
+    ambito('ajp');
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 456, 22, recortar(pinDestino.titulo, 40), COLOR.texto, 'center'));
     w.push(etiqueta('h', 12, 30, 456, 18,
@@ -333,6 +337,7 @@ function teclaPin(t) {
 /* ------------------------------------------------------------------ */
 
 function renderContadores() {
+    ambito('ajc');
     const info = paginar(store.contadores(), pagina, config.FILAS_POR_PAGINA + 1);
     pagina = info.pagina;
     const w = [pantalla()];
@@ -369,6 +374,7 @@ function renderContadores() {
 }
 
 function renderRegistro() {
+    ambito('ajr');
     const info = paginar(store.registro(), pagina, 9);
     pagina = info.pagina;
     const w = [pantalla()];

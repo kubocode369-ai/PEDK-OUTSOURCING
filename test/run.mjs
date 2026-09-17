@@ -386,6 +386,18 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     check('de fábrica no toca los interruptores', mock.switches.FUNC_T_NET_PRINT === 'FUNC_SW_ON');
     silenciar();
 
+    // Se pasa por el login ANTES de ir a Ajustes, como hizo la persona en el equipo
+    // (Pedk1.log, 17-09-2026). Importa el orden: el equipo no olvida los listeners, y
+    // el primero registrado con un id gana para siempre. Si la pantalla de "Su
+    // usuario" y la de "Nuevo usuario" comparten ids, a partir de aquí el Siguiente de
+    // Ajustes ejecuta el del login y no se puede dar de alta a nadie.
+    mock.pulsar('entrar');
+    hablar();
+    check('Entrar pide el usuario', /Su usuario/.test(mock.textos()), mock.textos());
+    silenciar();
+    const idsLogin = mock.botones();
+    mock.pulsar('cancelar');
+
     mock.pulsar('ajustes');
     teclear(config.PIN_ADMIN_FABRICA);
     mock.pulsar('OK');
@@ -400,8 +412,16 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
 
     mock.pulsar('usuarios');
     mock.pulsar('nuevo');
+    hablar();
+    check('ninguna pantalla comparte ids con el login',
+        mock.botones().filter((id) => idsLogin.indexOf(id) >= 0).length === 0,
+        mock.botones().filter((id) => idsLogin.indexOf(id) >= 0).join(','));
+    silenciar();
     teclear('ana');
     mock.pulsar('seguir');
+    hablar();
+    check('Siguiente pasa del nombre al PIN', /dígitos/.test(mock.textos()), mock.textos());
+    silenciar();
     teclear('4321'); mock.pulsar('OK');
     teclear('4321'); mock.pulsar('OK');
     hablar();

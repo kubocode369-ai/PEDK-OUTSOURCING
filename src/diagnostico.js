@@ -12,7 +12,7 @@
  * firmware, no qué acepta: para eso hay que intentarlo.
  */
 import { config } from './config.js';
-import { COLOR, boton, etiqueta, pantalla, paginador, paginar, recortar } from './ui.js';
+import { COLOR, ambito, boton, etiqueta, pantalla, paginador, paginar, recortar } from './ui.js';
 import { mostrar, repintar, pantallaActiva } from './router.js';
 import { guard } from './guard.js';
 import * as cerradura from './cerradura.js';
@@ -116,6 +116,7 @@ function decir(texto, color) {
 }
 
 function render() {
+    ambito('dg');
     const info = paginar(lineas, pagina, LINEAS_POR_PAGINA);
     pagina = info.pagina;
     const w = [pantalla()];

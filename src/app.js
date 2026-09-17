@@ -19,7 +19,7 @@
 import { config } from './config.js';
 import { guard } from './guard.js';
 import { enReposo, escucharDespertar } from './powerSave.js';
-import { COLOR, boton, etiqueta, pantalla, paginador, paginar, recortar, tecladoNumerico, tecladoTexto } from './ui.js';
+import { COLOR, ambito, boton, etiqueta, pantalla, paginador, paginar, recortar, tecladoNumerico, tecladoTexto } from './ui.js';
 import { conectarDibujo, mostrar, repintar, pantallaActiva } from './router.js';
 import * as store from './store.js';
 import * as cerradura from './cerradura.js';
@@ -99,6 +99,7 @@ function estadoInicio() {
 }
 
 function renderInicio() {
+    ambito('ini');
     const a = store.ajustes();
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 12, 456, 26, 'Impresión con PIN', COLOR.texto, 'center'));
@@ -159,6 +160,7 @@ function irUsuario() {
 }
 
 function renderUsuario() {
+    ambito('usr');
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 6, 200, 22, 'Su usuario', COLOR.texto));
     w.push(boton('cancelar', 238, 4, 110, 32, 'Cancelar', COLOR.suave, () => { decir('', COLOR.suave); irInicio(); }));
@@ -187,6 +189,7 @@ function renderUsuario() {
 }
 
 function renderPin() {
+    ambito('pin');
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 456, 22, pinParaAdmin ? 'PIN de administrador' : 'PIN de ' + recortar(usuarioEscrito, 24),
         COLOR.texto, 'center'));
@@ -283,6 +286,7 @@ function textoCuenta() {
 }
 
 function renderSesion() {
+    ambito('ses');
     const a = store.ajustes();
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 340, 24, 'Hola, ' + recortar(sesion.usuario(), 20), COLOR.texto));
@@ -311,6 +315,7 @@ function cargarRetenidos() {
 }
 
 function renderRetenidos() {
+    ambito('ret');
     const info = paginar(retenidos, pagina, config.FILAS_POR_PAGINA);
     pagina = info.pagina;
     const w = [pantalla()];
