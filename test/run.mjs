@@ -109,6 +109,60 @@ hablar(); console.log('· Usuarios y PIN'); silenciar();
 }
 
 /* ------------------------------------------------------------------ */
+hablar(); console.log('· Los datos sobreviven a un reinicio'); silenciar();
+{
+    // La prueba que faltaba desde el principio. El equipo devuelve un STRING en
+    // getUserDefinedData (medido), no un objeto: eso hacía que la app no pudiera
+    // releer nunca sus propios datos y arrancara siempre con cero usuarios.
+    // "Reiniciar" aquí es _recargar() sin tocar lo que el equipo tiene guardado.
+    const m = makePedk();
+    globalThis.pedk = m.pedk;
+    store._recargar();
+    store.agregarUsuario('ana', '1234');
+    store.cambiarPinAdmin('9876');
+    store.contar('ana', { tipo: 'PRINT', paginas: 4 });
+
+    store._recargar();                       // ← apagar y encender
+    hablar();
+    check('tras reiniciar, ana sigue ahí', store.usuarios().length === 1 && store.usuarios()[0].nombre === 'ana',
+        JSON.stringify(store.usuarios()));
+    check('tras reiniciar, su PIN sigue valiendo', store.validarUsuario('ana', '1234').ok);
+    check('tras reiniciar, el PIN de admin cambiado sigue valiendo',
+        store.esPinAdmin('9876') && !store.esPinAdmin(config.PIN_ADMIN_FABRICA));
+    check('tras reiniciar, los contadores siguen ahí', store.contadorDe('ana').paginas === 4,
+        JSON.stringify(store.contadorDe('ana')));
+    check('se guardó en los dos sitios', Object.keys(m.getFicheros()).length === 2
+        && !!m.getStore().impresionPin, Object.keys(m.getFicheros()).join(','));
+    silenciar();
+
+    // Si se pierde un sitio, el otro salva los datos. Los dos casos.
+    m.borrarFicheros();
+    store._recargar();
+    hablar();
+    check('sin los ficheros, los recupera de setUserDefinedData', store.usuarios().length === 1);
+    silenciar();
+    store.agregarUsuario('luis', '4321');    // vuelve a poblar el fichero
+    const soloFichero = makePedk({ ficheros: m.getFicheros() });
+    globalThis.pedk = soloFichero.pedk;      // equipo con los ficheros pero sin memoria
+    store._recargar();
+    hablar();
+    check('sin setUserDefinedData, los recupera del fichero', store.usuarios().length === 2,
+        JSON.stringify(store.usuarios().map((u) => u.nombre)));
+    silenciar();
+
+    // Y si el equipo devuelve un objeto, como promete la doc, también vale.
+    const doc = makePedk({ uddObjeto: true, sinObjectSave: true });
+    globalThis.pedk = doc.pedk;
+    store._recargar();
+    store.agregarUsuario('ana', '1234');
+    store._recargar();
+    hablar();
+    check('aguanta también la forma que promete la doc (objeto)', store.usuarios().length === 1,
+        JSON.stringify(store.usuarios()));
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
 hablar(); console.log('· Memoria que no se deja leer (no debe borrar nada)'); silenciar();
 {
     // Este es el fallo que perdía a los usuarios al reiniciar la impresora: si la

@@ -106,16 +106,45 @@ export function makePedk(opts = {}) {
      */
     let memoriaFalla = opts.memoriaFalla || null;
     const storage = {
+        /**
+         * Devuelve un STRING, como la BM5220ADW de verdad (medido 17-09-2026: `""` con
+         * la memoria vacía, no un objeto como promete la doc). El mock devolvía un
+         * objeto y por eso las pruebas no vieron nunca que la app no podía releer sus
+         * propios datos. Con `uddObjeto` se imita lo que dice la doc, para que la app
+         * aguante las dos formas.
+         */
         getUserDefinedData: () => {
             if (memoriaFalla === 'lanza') throw new Error('storage not ready');
             if (memoriaFalla === 'error') return 'ERROR_NO_DEVICE_BUSY';
-            return JSON.parse(JSON.stringify(store));
+            if (opts.uddObjeto) return JSON.parse(JSON.stringify(store));
+            return Object.keys(store).length === 0 ? '' : JSON.stringify(store);
         },
         setUserDefinedData: (d) => {
             store = JSON.parse(JSON.stringify(d));
             return 'EXIT_SUCCESS';
         },
     };
+
+    /**
+     * `Object.save`/`Object.load`, que en este equipo SÍ funcionan (ida y vuelta
+     * comprobada). Devuelven basura igual que el equipo, para que nadie se apoye en
+     * el retorno. Los ficheros viven en el mock, no en el disco.
+     */
+    let ficheros = opts.ficheros ? JSON.parse(JSON.stringify(opts.ficheros)) : {};
+    if (!opts.sinObjectSave) {
+        Object.save = (nombre, obj) => {
+            ficheros[String(nombre)] = JSON.stringify(obj);
+            return -4.418332059740763e-95;
+        };
+        Object.load = (nombre) => {
+            const s = ficheros[String(nombre)];
+            if (s === undefined) throw new Error('no such file: ' + nombre);
+            return JSON.parse(s);
+        };
+    } else {
+        delete Object.save;
+        delete Object.load;
+    }
 
     /* ---- historial, con la forma leída del equipo ---- */
     let seq = opts.primerId || 110;
@@ -236,8 +265,12 @@ export function makePedk(opts = {}) {
         cancelados,
         llegaTrabajo,
         getStore: () => store,
+        /** Los ficheros de Object.save, tal como quedaron. */
+        getFicheros: () => ficheros,
         /** El equipo vuelve a dejar leer la memoria (como si hubiera despertado). */
         memoriaResponde: () => { memoriaFalla = null; },
+        /** Borra sólo los ficheros: imita una reinstalación si no sobreviven. */
+        borrarFicheros: () => { ficheros = {}; },
         imprimir: agregar,
         pantalla: () => pantallaActual,
         textos: () => pantallaActual.filter((w) => w instanceof Label || w instanceof Button).map((w) => w.text).join(' | '),

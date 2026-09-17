@@ -137,6 +137,19 @@ function probarObjectSave(out) {
         return;
     }
     for (const nombre of ['pedk_prueba.json', '/storage/pedk_prueba.json']) {
+        // LEER ANTES DE ESCRIBIR. Lo que de verdad importa es la marca que dejó la
+        // pulsación ANTERIOR: si sigue ahí después de apagar el equipo (o de
+        // reinstalar la app), este fichero es persistencia de verdad. Guardar primero
+        // la borraba y la prueba no valía para nada.
+        let antes = null;
+        try {
+            antes = O.load(nombre);
+        } catch (e) {
+            antes = null;
+        }
+        const previa = antes && antes.marca ? antes.marca : 'no había';
+        out.push('antes en ' + nombre.replace('/storage/', 's:') + ': ' + previa);
+
         const marca = 'm' + Date.now();
         let r = null;
         try {
@@ -153,10 +166,9 @@ function probarObjectSave(out) {
             continue;
         }
         const vale = leido && leido.marca === marca;
-        // La marca ANTERIOR es la que importa tras un apagón: se deja en el log.
-        log('Object.save ' + nombre, 'devolvió ' + r + ' · releído ' + JSON.stringify(leido)
-            + ' · marca escrita ' + marca);
-        out.push('save/load ' + nombre + ': ' + (vale ? 'ok (' + marca + ')' : 'NO vuelve igual'));
+        log('Object.save ' + nombre, 'antes ' + previa + ' · devolvió ' + r + ' · releído '
+            + JSON.stringify(leido) + ' · marca nueva ' + marca);
+        out.push('save/load ' + nombre.replace('/storage/', 's:') + ': ' + (vale ? 'ok' : 'NO vuelve igual'));
     }
 }
 

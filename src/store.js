@@ -1,14 +1,25 @@
 /**
- * Memoria del equipo (`pedk.device.storage`): usuarios, contadores, registro y
- * ajustes. No hay servidor: esto es la fuente de verdad.
+ * Memoria del equipo: usuarios, contadores, registro y ajustes. No hay servidor: esto
+ * es la fuente de verdad, y por eso se guarda en DOS SITIOS a la vez.
  *
- * Dos cosas medidas en la BM5220ADW que mandan en este archivo:
+ * POR QUÉ SE PERDÍAN LOS USUARIOS AL REINICIAR (medido el 17-09-2026 con
+ * Diagnóstico > Probar memoria, log [explorar]):
  *
- *  - `setUserDefinedData` REEMPLAZA el objeto entero, no lo mezcla. Por eso se
- *    guarda todo bajo una sola clave y se respeta lo que haya en las demás.
- *  - **Reinstalar la app BORRA estos datos** (comprobado el 15-08-2026 con el agente
- *    de CloudPrint). Usuarios y contadores se pierden al actualizar la app: hay que
- *    anotar los contadores antes de reinstalar.
+ *   `getUserDefinedData()` NO devuelve un objeto como dice la doc del SDK: en esta
+ *   impresora devuelve un STRING (`""` con la memoria vacía). El código comprobaba
+ *   `typeof todo === 'object'` y por tanto **nunca conseguía releer sus propios
+ *   datos**: cada arranque empezaba con cero usuarios. No era una carrera al
+ *   encender; fallaba siempre. Aquí se parsea el string.
+ *
+ * Y se guarda además con `Object.save`/`Object.load`, que es lo que la doc recomienda
+ * y lo único cuya ida y vuelta está COMPROBADA en este equipo. Ojo: `Object.save`
+ * devuelve basura (se midió -4.4e-95, igual que `EncryPrint_start`), así que su
+ * retorno no se mira; la escritura se verifica releyéndola.
+ *
+ * Lo que este equipo NO tiene, por si alguien lo busca: no hay acceso a ficheros de
+ * una flash USB (sólo `setUsbHostEnable`, encender/apagar) y `getFileList` no existe.
+ * Para sacar o meter datos, lo que sí hay es red: `pedk.net.wget.wget` y
+ * `pedk.net.http.uploadFile`.
  *
  * De los PIN sólo se guarda una huella. No es criptografía seria —este motor no trae
  * `crypto`, y un PIN de 4 dígitos se adivina probando—; lo que protege de verdad es
@@ -17,6 +28,13 @@
 import { config } from './config.js';
 
 const CLAVE = 'impresionPin';
+
+/**
+ * Fichero de `Object.save`. Se guarda en los dos nombres porque el equipo aceptó los
+ * dos y no se sabe cuál sobrevive a una reinstalación: `/storage` es, según la doc,
+ * el almacenamiento persistente.
+ */
+const FICHEROS = ['impresionPin.json', '/storage/impresionPin.json'];
 
 /** Contador donde cae lo que se imprimió sin ninguna sesión abierta. */
 export const SIN_SESION = '(sin sesion)';
@@ -80,26 +98,78 @@ export function estado() {
 }
 
 /**
- * Lee la memoria del equipo.
- * @returns {?object} lo guardado bajo CLAVE, o null si no había nada.
- * @throws si el equipo no deja leer (lo que NUNCA debe confundirse con "no hay nada").
+ * Lo que devuelva `getUserDefinedData`, convertido a objeto.
+ *
+ * En este equipo devuelve un STRING: `""` cuando no hay nada guardado, y el JSON
+ * cuando sí. La doc del SDK promete un Object, así que se aceptan los dos. Un string
+ * que no sea JSON es un ERROR_NO del SDK: eso LANZA, porque un fallo de lectura no
+ * puede confundirse nunca con una memoria vacía (confundirlos era lo que la borraba).
+ *
+ * @returns {?object} el objeto completo de la memoria, o null si está vacía.
+ * @throws si lo devuelto no se entiende.
+ */
+function comoObjeto(valor) {
+    if (valor === null || valor === undefined) {
+        return null;
+    }
+    if (typeof valor === 'object') {
+        return valor;
+    }
+    if (typeof valor === 'string') {
+        const s = valor.replace(/^\s+|\s+$/g, '');
+        if (s === '') {
+            return null;                // memoria vacía (medido en la BM5220ADW)
+        }
+        const d = JSON.parse(s);        // si es un ERROR_NO, lanza: es lo correcto
+        if (!d || typeof d !== 'object') {
+            throw new Error('el JSON no es un objeto');
+        }
+        return d;
+    }
+    throw new Error('devolvió ' + typeof valor);
+}
+
+/** ¿Tiene pinta de ser nuestro registro y no basura? */
+function esNuestro(d) {
+    return !!d && typeof d === 'object' && Array.isArray(d.usuarios);
+}
+
+/** Lee el fichero de `Object.save`. Devuelve null si no hay o no vale. */
+function leerFichero() {
+    const O = globalThis.Object;
+    if (typeof O.load !== 'function') {
+        return null;
+    }
+    for (const f of FICHEROS) {
+        try {
+            const d = O.load(f);
+            if (esNuestro(d)) {
+                return d;
+            }
+        } catch (e) { /* no existe todavía, o no se puede leer: se prueba el siguiente */ }
+    }
+    return null;
+}
+
+/**
+ * Lee la memoria del equipo de los dos sitios. Manda el fichero; si está vacío pero
+ * `getUserDefinedData` sí tiene datos, se adoptan (y el siguiente guardado los pasa
+ * al fichero). Sólo lanza si NINGUNO se pudo leer: con un sitio bueno se sigue.
+ *
+ * @returns {?object} lo guardado, o null si el equipo está legítimamente vacío.
  */
 function leerDelEquipo() {
+    const delFichero = leerFichero();
+    if (delFichero) {
+        return delFichero;
+    }
     const s = ns();
     if (!s || typeof s.getUserDefinedData !== 'function') {
         // Sin API no hay nada que proteger: no se puede leer ni escribir.
         return null;
     }
-    const todo = s.getUserDefinedData();
-    if (todo === null || todo === undefined) {
-        return null;                    // equipo nuevo: legítimamente vacío
-    }
-    if (typeof todo !== 'object') {
-        // La doc del SDK dice que estas funciones devuelven un ERROR_NO (String)
-        // cuando fallan. Un string aquí es un fallo, no una memoria vacía.
-        throw new Error('devolvió ' + typeof todo + ': ' + String(todo).slice(0, 40));
-    }
-    return todo[CLAVE] || null;
+    const todo = comoObjeto(s.getUserDefinedData());
+    return (todo && todo[CLAVE]) || null;
 }
 
 function cargar() {
@@ -161,13 +231,49 @@ function normalizar(d) {
 /** Si ya se comprobó que una escritura llega de verdad al equipo. */
 let escrituraComprobada = false;
 
+/**
+ * Guarda en los DOS sitios: el fichero de `Object.save` y `setUserDefinedData`.
+ * Basta con que uno funcione. Que fallen los dos es lo que se avisa a gritos.
+ */
 function guardar() {
-    const s = ns();
-    if (!s || typeof s.setUserDefinedData !== 'function') {
-        return false;
-    }
     if (soloLectura) {
         console.log('[store] NO se guarda: la memoria no se pudo leer (' + motivo + ')');
+        return false;
+    }
+    const enFichero = guardarEnFichero();
+    const enMemoria = guardarEnMemoria();
+    if (!enFichero && !enMemoria) {
+        console.log('[store] AVISO GRAVE: no se pudo guardar en ningún sitio');
+        return false;
+    }
+    if (!escrituraComprobada) {
+        escrituraComprobada = true;
+        comprobarEscritura(enFichero, enMemoria);
+    }
+    return true;
+}
+
+/** `Object.save`: devuelve basura, así que sólo cuenta que no lance. */
+function guardarEnFichero() {
+    const O = globalThis.Object;
+    if (typeof O.save !== 'function') {
+        return false;
+    }
+    let alguno = false;
+    for (const f of FICHEROS) {
+        try {
+            O.save(f, cache);
+            alguno = true;
+        } catch (e) {
+            console.log('[store] Object.save ' + f + ': ' + (e && e.message));
+        }
+    }
+    return alguno;
+}
+
+function guardarEnMemoria() {
+    const s = ns();
+    if (!s || typeof s.setUserDefinedData !== 'function') {
         return false;
     }
     try {
@@ -175,59 +281,45 @@ function guardar() {
         // lectura falla aquí, se escribe únicamente nuestra clave en vez de arrasar.
         let todo = {};
         try {
-            const leido = leerTodo(s);
-            if (leido) {
-                todo = leido;
-            }
+            todo = comoObjeto(s.getUserDefinedData()) || {};
         } catch (e) {
             console.log('[store] no se pudo releer al guardar (' + (e && e.message) + '): se escribe sólo ' + CLAVE);
         }
         todo[CLAVE] = cache;
-        const r = s.setUserDefinedData(todo);
-        if (!escrituraComprobada) {
-            comprobarEscritura(s, r);
-        }
+        s.setUserDefinedData(todo);
         return true;
     } catch (e) {
-        console.log('[store] no se pudo guardar: ' + (e && e.message));
+        console.log('[store] setUserDefinedData: ' + (e && e.message));
         return false;
     }
 }
 
-function leerTodo(s) {
-    if (typeof s.getUserDefinedData !== 'function') {
-        return null;
-    }
-    const leido = s.getUserDefinedData();
-    if (leido === null || leido === undefined) {
-        return null;
-    }
-    if (typeof leido !== 'object') {
-        throw new Error('devolvió ' + typeof leido + ': ' + String(leido).slice(0, 40));
-    }
-    return leido;
-}
-
 /**
- * La primera escritura se verifica releyéndola. `setUserDefinedData` devuelve un
- * ERROR_NO que la app ignoraba, así que un guardado que fallaba en silencio se veía
- * bien en pantalla (el cache en RAM sí tenía los datos) y se perdía al apagar.
+ * La primera escritura se verifica releyéndola, en cada sitio por separado. Ninguna
+ * de las dos APIs es de fiar por su retorno: `setUserDefinedData` devuelve un ERROR_NO
+ * que la app ignoraba, y `Object.save` devuelve basura (-4.4e-95, medido). Así que la
+ * única prueba de que algo se guardó es volver a leerlo.
+ *
  * Se comprueba una vez y no en cada trabajo: releer en cada contada sale caro.
  */
-function comprobarEscritura(s, resultado) {
-    escrituraComprobada = true;
-    let vuelta = null;
-    try {
-        vuelta = leerTodo(s);
-    } catch (e) {
-        console.log('[store] AVISO: setUserDefinedData devolvió "' + resultado
-            + '" pero al releer: ' + (e && e.message));
-        return;
+function comprobarEscritura(enFichero, enMemoria) {
+    let fichero = 'no se intentó';
+    if (enFichero) {
+        const d = leerFichero();
+        fichero = d ? 'ok (' + d.usuarios.length + ' usuario(s))' : 'NO VUELVE';
     }
-    const d = vuelta && vuelta[CLAVE];
-    const ok = !!d && Array.isArray(d.usuarios);
-    console.log('[store] primera escritura: devolvió "' + resultado + '" · al releer '
-        + (ok ? 'están los datos (' + d.usuarios.length + ' usuario(s))' : 'NO ESTÁN LOS DATOS'));
+    let memoria = 'no se intentó';
+    if (enMemoria) {
+        try {
+            const s = ns();
+            const todo = comoObjeto(s.getUserDefinedData());
+            const d = todo && todo[CLAVE];
+            memoria = esNuestro(d) ? 'ok (' + d.usuarios.length + ' usuario(s))' : 'NO VUELVE';
+        } catch (e) {
+            memoria = 'al releer lanzó ' + (e && e.message);
+        }
+    }
+    console.log('[store] primera escritura · fichero: ' + fichero + ' · memoria: ' + memoria);
 }
 
 /** Solo para las pruebas: olvida la copia en memoria y relee del equipo. */
