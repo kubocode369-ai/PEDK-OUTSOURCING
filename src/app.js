@@ -105,8 +105,12 @@ function renderInicio() {
     w.push(etiqueta('t', 12, 12, 456, 26, 'Impresión con PIN', COLOR.texto, 'center'));
     const [estado, color] = estadoInicio();
     w.push(etiqueta('estado', 12, 44, 456, 22, estado, color, 'center'));
-    if (avisoCerradura) {
-        w.push(etiqueta('aviso', 12, 66, 456, 20, recortar(avisoCerradura, 62), COLOR.peligro, 'center'));
+    // La memoria en sólo lectura manda sobre cualquier otro aviso: mientras dure, lo
+    // que se dé de alta o se cuente no sobrevive a un apagón.
+    const mem = store.estado();
+    const alerta = mem.soloLectura ? 'MEMORIA NO DISPONIBLE: no se guardarán usuarios ni contadores' : avisoCerradura;
+    if (alerta) {
+        w.push(etiqueta('aviso', 12, 66, 456, 20, recortar(alerta, 62), COLOR.peligro, 'center'));
     }
     const pasos = a.modo === 'sesion'
         ? ['1. Entre con su usuario y PIN', '2. Imprima desde su PC', '3. Pulse Terminar al acabar']

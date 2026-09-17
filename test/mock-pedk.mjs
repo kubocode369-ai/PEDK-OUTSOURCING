@@ -98,9 +98,23 @@ export function makePedk(opts = {}) {
 
     /* ---- memoria ---- */
     let store = opts.store ? JSON.parse(JSON.stringify(opts.store)) : {};
+    /**
+     * `memoriaFalla` imita a un equipo que no deja leer al arrancar, que es lo que
+     * borraba a los usuarios: 'lanza' tira una excepción y 'error' devuelve un ERROR_NO
+     * (String), que es lo que la doc del SDK dice que devuelven estas funciones cuando
+     * fallan. Se desactiva con `mock.memoriaResponde()`, como si despertara.
+     */
+    let memoriaFalla = opts.memoriaFalla || null;
     const storage = {
-        getUserDefinedData: () => JSON.parse(JSON.stringify(store)),
-        setUserDefinedData: (d) => { store = JSON.parse(JSON.stringify(d)); },
+        getUserDefinedData: () => {
+            if (memoriaFalla === 'lanza') throw new Error('storage not ready');
+            if (memoriaFalla === 'error') return 'ERROR_NO_DEVICE_BUSY';
+            return JSON.parse(JSON.stringify(store));
+        },
+        setUserDefinedData: (d) => {
+            store = JSON.parse(JSON.stringify(d));
+            return 'EXIT_SUCCESS';
+        },
     };
 
     /* ---- historial, con la forma leída del equipo ---- */
@@ -222,6 +236,8 @@ export function makePedk(opts = {}) {
         cancelados,
         llegaTrabajo,
         getStore: () => store,
+        /** El equipo vuelve a dejar leer la memoria (como si hubiera despertado). */
+        memoriaResponde: () => { memoriaFalla = null; },
         imprimir: agregar,
         pantalla: () => pantallaActual,
         textos: () => pantallaActual.filter((w) => w instanceof Label || w instanceof Button).map((w) => w.text).join(' | '),

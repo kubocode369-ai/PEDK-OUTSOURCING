@@ -53,19 +53,83 @@ function vacio() {
 
 let cache = null;
 
+/**
+ * MODO SÓLO LECTURA. El fallo que borraba a los usuarios estaba aquí: una lectura
+ * FALLIDA y "todavía no hay nada guardado" acababan las dos en un objeto vacío, y el
+ * primer `guardar()` escribía ese vacío ENCIMA de los datos buenos.
+ *
+ * Y la app escribe a los pocos milisegundos de arrancar: `arrancar()` llama a
+ * `historial.vigilar`, que da su primera vuelta en el acto, ve `historialIniciado`
+ * falso y llama a `marcarVistos(..., true)`. O sea que el momento más probable de que
+ * el almacenamiento aún no responda —recién encendida la impresora— es justo el
+ * momento en que la app graba.
+ *
+ * Ahora se distingue: si la lectura LANZA o no devuelve un objeto, no se guarda nada
+ * y se reintenta leer más tarde. Perder los contadores de un rato es reparable;
+ * perder los usuarios y el PIN de administrador, no.
+ */
+let soloLectura = false;
+let motivo = null;
+let ultimoIntento = 0;
+/** Cada cuánto se vuelve a intentar leer mientras se está en sólo lectura. */
+const REINTENTO_MS = 15000;
+
+/** @returns {{soloLectura: boolean, motivo: ?string}} */
+export function estado() {
+    return { soloLectura, motivo };
+}
+
+/**
+ * Lee la memoria del equipo.
+ * @returns {?object} lo guardado bajo CLAVE, o null si no había nada.
+ * @throws si el equipo no deja leer (lo que NUNCA debe confundirse con "no hay nada").
+ */
+function leerDelEquipo() {
+    const s = ns();
+    if (!s || typeof s.getUserDefinedData !== 'function') {
+        // Sin API no hay nada que proteger: no se puede leer ni escribir.
+        return null;
+    }
+    const todo = s.getUserDefinedData();
+    if (todo === null || todo === undefined) {
+        return null;                    // equipo nuevo: legítimamente vacío
+    }
+    if (typeof todo !== 'object') {
+        // La doc del SDK dice que estas funciones devuelven un ERROR_NO (String)
+        // cuando fallan. Un string aquí es un fallo, no una memoria vacía.
+        throw new Error('devolvió ' + typeof todo + ': ' + String(todo).slice(0, 40));
+    }
+    return todo[CLAVE] || null;
+}
+
 function cargar() {
     if (cache) {
+        // Si se quedó en sólo lectura, se vuelve a intentar de vez en cuando: puede
+        // que el almacenamiento sólo estuviera dormido al arrancar.
+        if (soloLectura && Date.now() - ultimoIntento >= REINTENTO_MS) {
+            ultimoIntento = Date.now();
+            try {
+                const guardado = leerDelEquipo();
+                if (guardado) {
+                    cache = normalizar(guardado);
+                    soloLectura = false;
+                    motivo = null;
+                    console.log('[store] la memoria respondió: se recuperan los datos y se vuelve a guardar');
+                }
+            } catch (e) {
+                console.log('[store] sigue sin poder leerse: ' + (e && e.message));
+            }
+        }
         return cache;
     }
+    ultimoIntento = Date.now();
     let guardado = null;
-    const s = ns();
-    if (s && typeof s.getUserDefinedData === 'function') {
-        try {
-            const todo = s.getUserDefinedData();
-            guardado = todo && typeof todo === 'object' ? todo[CLAVE] : null;
-        } catch (e) {
-            console.log('[store] no se pudo leer: ' + (e && e.message));
-        }
+    try {
+        guardado = leerDelEquipo();
+    } catch (e) {
+        soloLectura = true;
+        motivo = String((e && e.message) || e).slice(0, 60);
+        console.log('[store] NO SE PUDO LEER (' + motivo + '): no se guardará nada para no borrar lo que haya');
     }
     cache = normalizar(guardado);
     return cache;
@@ -94,19 +158,35 @@ function normalizar(d) {
     return base;
 }
 
+/** Si ya se comprobó que una escritura llega de verdad al equipo. */
+let escrituraComprobada = false;
+
 function guardar() {
     const s = ns();
     if (!s || typeof s.setUserDefinedData !== 'function') {
         return false;
     }
+    if (soloLectura) {
+        console.log('[store] NO se guarda: la memoria no se pudo leer (' + motivo + ')');
+        return false;
+    }
     try {
+        // Se respeta lo que haya de otras apps, pero sólo si se puede leer: si la
+        // lectura falla aquí, se escribe únicamente nuestra clave en vez de arrasar.
         let todo = {};
-        if (typeof s.getUserDefinedData === 'function') {
-            const leido = s.getUserDefinedData();
-            todo = leido && typeof leido === 'object' ? leido : {};
+        try {
+            const leido = leerTodo(s);
+            if (leido) {
+                todo = leido;
+            }
+        } catch (e) {
+            console.log('[store] no se pudo releer al guardar (' + (e && e.message) + '): se escribe sólo ' + CLAVE);
         }
         todo[CLAVE] = cache;
-        s.setUserDefinedData(todo);
+        const r = s.setUserDefinedData(todo);
+        if (!escrituraComprobada) {
+            comprobarEscritura(s, r);
+        }
         return true;
     } catch (e) {
         console.log('[store] no se pudo guardar: ' + (e && e.message));
@@ -114,10 +194,50 @@ function guardar() {
     }
 }
 
+function leerTodo(s) {
+    if (typeof s.getUserDefinedData !== 'function') {
+        return null;
+    }
+    const leido = s.getUserDefinedData();
+    if (leido === null || leido === undefined) {
+        return null;
+    }
+    if (typeof leido !== 'object') {
+        throw new Error('devolvió ' + typeof leido + ': ' + String(leido).slice(0, 40));
+    }
+    return leido;
+}
+
+/**
+ * La primera escritura se verifica releyéndola. `setUserDefinedData` devuelve un
+ * ERROR_NO que la app ignoraba, así que un guardado que fallaba en silencio se veía
+ * bien en pantalla (el cache en RAM sí tenía los datos) y se perdía al apagar.
+ * Se comprueba una vez y no en cada trabajo: releer en cada contada sale caro.
+ */
+function comprobarEscritura(s, resultado) {
+    escrituraComprobada = true;
+    let vuelta = null;
+    try {
+        vuelta = leerTodo(s);
+    } catch (e) {
+        console.log('[store] AVISO: setUserDefinedData devolvió "' + resultado
+            + '" pero al releer: ' + (e && e.message));
+        return;
+    }
+    const d = vuelta && vuelta[CLAVE];
+    const ok = !!d && Array.isArray(d.usuarios);
+    console.log('[store] primera escritura: devolvió "' + resultado + '" · al releer '
+        + (ok ? 'están los datos (' + d.usuarios.length + ' usuario(s))' : 'NO ESTÁN LOS DATOS'));
+}
+
 /** Solo para las pruebas: olvida la copia en memoria y relee del equipo. */
 export function _recargar() {
     cache = null;
     intentos.clear();
+    soloLectura = false;
+    motivo = null;
+    ultimoIntento = 0;
+    escrituraComprobada = false;
 }
 
 /* ------------------------------------------------------------------ */

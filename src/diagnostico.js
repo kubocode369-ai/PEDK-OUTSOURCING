@@ -87,7 +87,9 @@ export function informe() {
     }
 
     const st = globalThis.pedk && pedk.device && pedk.device.storage;
-    out.push('Memoria: ' + si(st && typeof st.setUserDefinedData === 'function'));
+    const mem = store.estado();
+    out.push('Memoria: ' + si(st && typeof st.setUserDefinedData === 'function')
+        + (mem.soloLectura ? ' · SOLO LECTURA: ' + mem.motivo : ' · escribe'));
     out.push('Salir al menu: draw_exit ' + si(typeof globalThis.js_screenctrl_draw_exit === 'function')
         + ' · on_back ' + si(globalThis.process && typeof process.on_back === 'function'));
 
@@ -130,6 +132,12 @@ function render() {
         w.push(etiqueta('l' + i, 12, 40 + i * 20, 456, 20, recortar(l, 62), COLOR.texto));
     });
     w.push(...paginador('p', 12, 226, info, () => { pagina--; repintar(); }, () => { pagina++; repintar(); }));
+    w.push(boton('datos', 302, 226, 166, 30, 'Probar memoria', COLOR.acento, () => {
+        lineas = explorar.probarDatos();
+        pagina = 0;
+        decir('Guarde el log: líneas [explorar]', COLOR.aviso);
+        repintar();
+    }));
     if (prueba) {
         const seg = Math.max(0, Math.ceil((prueba.hasta - Date.now()) / 1000));
         w.push(etiqueta('pr', 12, 264, 456, 22,

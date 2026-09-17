@@ -109,6 +109,58 @@ hablar(); console.log('· Usuarios y PIN'); silenciar();
 }
 
 /* ------------------------------------------------------------------ */
+hablar(); console.log('· Memoria que no se deja leer (no debe borrar nada)'); silenciar();
+{
+    // Este es el fallo que perdía a los usuarios al reiniciar la impresora: si la
+    // lectura falla al arrancar, el cache queda vacío y el primer guardado —que llega
+    // a los milisegundos, desde historial.vigilar— escribía ese vacío encima.
+    for (const modo of ['lanza', 'error']) {
+        const previo = { impresionPin: { version: 1, usuarios: [{ nombre: 'ana', huella: 'x', activo: true }], contadores: { ana: { impresiones: 3, paginas: 7, copias: 0, paginasCopia: 0 } }, registro: [], vistos: [], historialIniciado: true, ajustes: {} } };
+        const m = makePedk({ store: previo, memoriaFalla: modo });
+        globalThis.pedk = m.pedk;
+        store._recargar();
+        hablar();
+        // La lectura es perezosa: ocurre en el primer acceso, no al importar el módulo.
+        check('memoria ' + modo + ': no ve usuarios (no puede leerlos)', store.usuarios().length === 0);
+        check('memoria ' + modo + ': queda en sólo lectura', store.estado().soloLectura, JSON.stringify(store.estado()));
+        silenciar();
+        // Lo que hacía el arranque: marcar el historial y contar. No debe grabar.
+        store.marcarVistos(['1|x'], true);
+        store.contar('ana', { tipo: 'PRINT', paginas: 2 });
+        hablar();
+        check('memoria ' + modo + ': NO pisa a los usuarios guardados',
+            m.getStore().impresionPin.usuarios.length === 1, JSON.stringify(m.getStore().impresionPin.usuarios));
+        check('memoria ' + modo + ': NO pisa los contadores guardados',
+            m.getStore().impresionPin.contadores.ana.paginas === 7, JSON.stringify(m.getStore().impresionPin.contadores));
+        silenciar();
+        // El equipo despierta: a partir de aquí se recuperan los datos y se guarda.
+        m.memoriaResponde();
+        const esperar15s = Date.now;
+        Date.now = () => esperar15s() + 20000;
+        const us = store.usuarios();
+        Date.now = esperar15s;
+        hablar();
+        check('memoria ' + modo + ': al responder recupera a ana', us.length === 1 && us[0].nombre === 'ana', JSON.stringify(us));
+        check('memoria ' + modo + ': y sale de sólo lectura', !store.estado().soloLectura);
+        silenciar();
+        store.agregarUsuario('luis', '4321');
+        hablar();
+        check('memoria ' + modo + ': ya vuelve a guardar', m.getStore().impresionPin.usuarios.length === 2,
+            JSON.stringify(m.getStore().impresionPin.usuarios.map((u) => u.nombre)));
+        silenciar();
+    }
+    // Un equipo de verdad vacío SÍ debe poder guardar: no es un fallo de lectura.
+    const nuevo = makePedk();
+    globalThis.pedk = nuevo.pedk;
+    store._recargar();
+    store.agregarUsuario('ana', '1234');
+    hablar();
+    check('equipo nuevo (memoria vacía) sí guarda', !store.estado().soloLectura
+        && nuevo.getStore().impresionPin.usuarios.length === 1);
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
 hablar(); console.log('· Cerradura'); silenciar();
 {
     equipo();
