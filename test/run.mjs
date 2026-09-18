@@ -169,7 +169,7 @@ hablar(); console.log('· Respaldo por red: exportar e importar'); silenciar();
     store.agregarUsuario('ana', '1234');
     respaldo.fijarDestino('10.0.0.7');
     let r3 = null;
-    respaldo.importar((x) => { r3 = x; });
+    respaldo.importar('usuarios', (x) => { r3 = x; });
     hablar();
     check('importa por GET de /usuarios.json',
         mock2Ultima(conUsuarios).url === 'http://10.0.0.7:8099/usuarios.json'
@@ -187,6 +187,31 @@ hablar(); console.log('· Respaldo por red: exportar e importar'); silenciar();
         JSON.stringify(store.usuarios().map((u) => u.nombre)));
     silenciar();
 
+    // RESTAURAR va por otra ruta que dar de alta gente nueva. Con un solo botón, la
+    // plantilla de ejemplo del servidor acabó dada de alta como usuarios de verdad.
+    const conAmbos = makePedk({ red: { respuestas: {
+        '/usuarios.json': { code: 200, body: { usuarios: [] } },
+        '/restaurar.json': { code: 200, body: { usuarios: [{ nombre: 'zoe', huella: 'ff11' }] } },
+    } } });
+    globalThis.pedk = conAmbos.pedk;
+    store._recargar();
+    respaldo.fijarDestino('10.0.0.7');
+    let rr = null;
+    respaldo.importar('restaurar', (x) => { rr = x; });
+    hablar();
+    check('restaurar pide /restaurar.json, no /usuarios.json',
+        mock2Ultima(conAmbos).url === 'http://10.0.0.7:8099/restaurar.json', mock2Ultima(conAmbos).url);
+    check('y devuelve a la gente del respaldo con su huella',
+        store.usuarios().length === 1 && store.usuarios()[0].huella === 'ff11', JSON.stringify(store.usuarios()));
+    silenciar();
+    // Una lista vacía no debe dar de alta a nadie ni decir que fue bien.
+    let rv = null;
+    respaldo.importar('usuarios', (x) => { rv = x; });
+    hablar();
+    check('usuarios.json vacío no da de alta a nadie y lo dice',
+        rv && !rv.ok && /vacío/.test(rv.detalle) && store.usuarios().length === 1, JSON.stringify(rv));
+    silenciar();
+
     // Un fichero con un respaldo entero también vale para restaurar.
     const desdeRespaldo = store.restaurarUsuarios({ usuarios: [{ nombre: 'pepe', huella: 'abc', activo: false }] });
     hablar();
@@ -201,7 +226,7 @@ hablar(); console.log('· Respaldo por red: exportar e importar'); silenciar();
     store._recargar();
     respaldo.fijarDestino('10.0.0.7');
     let r4 = null;
-    respaldo.importar((x) => { r4 = x; });
+    respaldo.importar('usuarios', (x) => { r4 = x; });
     hablar();
     check('un fichero que no es JSON se rechaza sin romper', r4 && !r4.ok && store.usuarios().length === 0,
         JSON.stringify(r4));

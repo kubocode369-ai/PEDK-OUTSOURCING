@@ -140,12 +140,23 @@ export function exportar(alTerminar) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Lee los usuarios del PC y los da de alta. No borra a nadie: actualiza los que ya
- * existen y crea los que faltan (ver store.restaurarUsuarios).
+ * Trae gente del PC y la da de alta. No borra a nadie: actualiza los que ya existen y
+ * crea los que faltan (ver store.restaurarUsuarios).
  *
+ * Dos orígenes distintos a propósito, porque son dos cosas distintas:
+ *
+ *   'usuarios'  → /usuarios.json, la lista que escribe el administrador con los PIN en
+ *                 claro, para dar de alta a gente nueva en bloque.
+ *   'restaurar' → /restaurar.json, el último respaldo del propio equipo. Lleva las
+ *                 huellas, así que cada persona conserva el PIN que ya tenía.
+ *
+ * Al principio esto era un solo botón leyendo un solo fichero, y la plantilla de
+ * ejemplo del servidor acabó dada de alta como si fueran usuarios de verdad.
+ *
+ * @param {'usuarios'|'restaurar'} origen
  * @param {function({ok: boolean, detalle: string})} [alTerminar]
  */
-export function importar(alTerminar) {
+export function importar(origen, alTerminar) {
     const avisar = (ok, detalle) => {
         enCurso = false;
         anotar(ok, detalle);
@@ -167,8 +178,9 @@ export function importar(alTerminar) {
     }
     enCurso = true;
     try {
+        const ruta = origen === 'restaurar' ? config.RESPALDO_RUTA_RESTAURAR : config.RESPALDO_RUTA_USUARIOS;
         const cab = new h.Headers('Accept', 'application/json');
-        const req = new h.Request(url(config.RESPALDO_RUTA_USUARIOS), 'GET', cab, null);
+        const req = new h.Request(url(ruta), 'GET', cab, null);
         h.fetchData(req, (error, resp) => {
             const codigo = resp && resp.code;
             if (!(codigo >= 200 && codigo < 300)) {
@@ -187,7 +199,9 @@ export function importar(alTerminar) {
             }
             const r = store.restaurarUsuarios(datos);
             if (!r.ok) {
-                avisar(false, r.error || 'ningún usuario válido en el fichero');
+                avisar(false, r.error || (origen === 'restaurar'
+                    ? 'el respaldo del PC no trae usuarios'
+                    : 'usuarios.json está vacío: rellénelo en el PC'));
                 return;
             }
             avisar(true, r.creados + ' nuevo(s), ' + r.actualizados + ' actualizado(s)'

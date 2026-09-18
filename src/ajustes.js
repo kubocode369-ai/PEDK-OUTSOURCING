@@ -368,7 +368,7 @@ function renderRespaldo() {
         repintar();
     }));
 
-    w.push(boton('subir', 12, 152, 224, 40, 'Respaldar ahora', COLOR.ok, () => {
+    w.push(boton('subir', 12, 148, 224, 38, 'Respaldar ahora', COLOR.ok, () => {
         if (!e.destino) {
             decir('Ponga primero la IP del PC', COLOR.peligro);
             repintar();
@@ -382,32 +382,43 @@ function renderRespaldo() {
         });
     }));
 
-    // Importar pide un segundo toque: trae usuarios de fuera y cambia PIN.
-    w.push(boton('bajar', 244, 152, 224, 40, confirmar === 'bajar' ? '¿Seguro? Toque otra vez' : 'Traer usuarios del PC',
-        confirmar === 'bajar' ? COLOR.peligro : COLOR.acento, () => {
+    // Restaurar y dar de alta gente nueva son DOS cosas distintas y por eso son dos
+    // botones. Con uno solo, la plantilla de ejemplo del servidor acabó dada de alta
+    // como si fueran usuarios de verdad.
+    const traer = (origen, clave, aviso) => () => {
         if (!e.destino) {
             decir('Ponga primero la IP del PC', COLOR.peligro);
             repintar();
             return;
         }
-        if (confirmar !== 'bajar') {
-            confirmar = 'bajar';
-            decir('Dará de alta los usuarios del fichero del PC', COLOR.aviso);
+        if (confirmar !== clave) {
+            confirmar = clave;
+            decir(aviso, COLOR.aviso);
             repintar();
             return;
         }
         confirmar = null;
         decir('Leyendo del PC…', COLOR.suave);
         repintar();
-        respaldo.importar((r) => {
+        respaldo.importar(origen, (r) => {
             decir(r.detalle, r.ok ? COLOR.ok : COLOR.peligro);
             repintar();
         });
-    }));
+    };
 
-    w.push(etiqueta('a', 12, 200, 456, 20, 'El respaldo lleva los PIN: guárdelo como tal', COLOR.aviso));
-    w.push(etiqueta('c', 12, 222, 456, 40, 'En el PC: herramientas/respaldo-servidor.py', COLOR.tenue));
-    w.push(etiqueta('msg', 12, 268, 456, 44, recortar(mensaje, 62), colorMensaje));
+    w.push(boton('restaurar', 244, 148, 224, 38,
+        confirmar === 'restaurar' ? '¿Seguro? Toque otra vez' : 'Restaurar último respaldo',
+        confirmar === 'restaurar' ? COLOR.peligro : COLOR.acento,
+        traer('restaurar', 'restaurar', 'Devuelve los usuarios del último respaldo, con su PIN')));
+
+    w.push(boton('altas', 12, 190, 456, 34,
+        confirmar === 'altas' ? '¿Seguro? Toque otra vez' : 'Dar de alta la lista del PC (usuarios.json)',
+        confirmar === 'altas' ? COLOR.peligro : COLOR.acento,
+        traer('usuarios', 'altas', 'Dará de alta a la gente escrita en usuarios.json')));
+
+    w.push(etiqueta('a', 12, 230, 456, 20, 'El respaldo lleva los PIN: guárdelo como tal', COLOR.aviso));
+    w.push(etiqueta('c', 12, 250, 456, 20, 'En el PC: "Respaldo impresora.bat", déjelo abierto', COLOR.tenue));
+    w.push(etiqueta('msg', 12, 272, 456, 44, recortar(mensaje, 62), colorMensaje));
     return w;
 }
 

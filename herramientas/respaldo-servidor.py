@@ -8,8 +8,11 @@ Se lanza en un PC de la misma red que la impresora y atiende dos cosas:
                        Se guarda en respaldos/respaldo-AAAAMMDD-HHMMSS.json, y también
                        como respaldos/ultimo.json para tenerlo siempre a mano.
 
-  GET  /usuarios.json  la impresora lee de aquí la gente a dar de alta. Se sirve el
-                       fichero usuarios.json de esta misma carpeta.
+  GET  /usuarios.json  gente NUEVA a dar de alta en bloque. Se sirve el fichero
+                       usuarios.json de esta carpeta, que escribes tú con los PIN.
+
+  GET  /restaurar.json el ÚLTIMO respaldo, para devolver la impresora a como estaba.
+                       Lleva las huellas, así que cada persona conserva su PIN.
 
 Por qué por red y no con una flash: la app NO puede leer ficheros de una flash USB.
 Se midió en el equipo el 17-09-2026: del USB sólo se exponen interruptores.
@@ -31,7 +34,7 @@ import os
 import socket
 import sys
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PUERTO = 8099                       # tiene que coincidir con config.RESPALDO_PUERTO
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -43,6 +46,32 @@ LIMITE_BYTES = 4 * 1024 * 1024      # un respaldo real son unos pocos KB
 def aviso(texto):
     """Imprime YA: sin flush, Python lo retiene cuando la salida no es una consola."""
     print(texto, flush=True)
+
+
+def desactivar_seleccion_rapida():
+    """
+    Windows: al hacer clic dentro de la consola se entra en "modo selección" y el
+    proceso queda CONGELADO hasta que se pulsa Enter. No va lento: está parado.
+
+    Eso es lo que hacía que un segundo respaldo no llegara hasta dar Enter: el
+    respaldo salía de la impresora, pero este programa estaba detenido por un clic.
+    Aquí se apaga QuickEdit para que un clic no pueda volver a parar el servidor.
+    """
+    if os.name != 'nt':
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+        entrada = kernel32.GetStdHandle(-10)          # STD_INPUT_HANDLE
+        modo = wintypes.DWORD()
+        if not kernel32.GetConsoleMode(entrada, ctypes.byref(modo)):
+            return
+        QUICK_EDIT = 0x0040
+        EXTENDED = 0x0080        # hay que ponerlo para que quitar QUICK_EDIT valga
+        kernel32.SetConsoleMode(entrada, (modo.value & ~QUICK_EDIT) | EXTENDED)
+    except Exception:
+        pass                     # si no se puede, el servidor funciona igual
 
 
 def ahora():
@@ -112,19 +141,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         ruta = self.path.split('?')[0].rstrip('/')
-        if ruta not in ('/usuarios.json', '/usuarios'):
+        if ruta in ('/usuarios.json', '/usuarios'):
+            self.servir_json(FICHERO_USUARIOS, 'usuarios.json (altas nuevas)')
+        elif ruta in ('/restaurar.json', '/restaurar'):
+            self.servir_json(os.path.join(CARPETA_RESPALDOS, 'ultimo.json'),
+                             'el ultimo respaldo')
+        else:
             self.responder(404, '{"error":"ruta desconocida"}')
-            return
-        if not os.path.exists(FICHERO_USUARIOS):
-            aviso('  %s  pidieron usuarios.json y no existe' % ahora())
-            self.responder(404, '{"error":"no hay usuarios.json en la carpeta"}')
+
+    def servir_json(self, camino, que):
+        if not os.path.exists(camino):
+            aviso('  %s  pidieron %s y no existe (%s)' % (ahora(), que, camino))
+            self.responder(404, '{"error":"no existe %s"}' % os.path.basename(camino))
             return
         try:
-            with open(FICHERO_USUARIOS, encoding='utf-8') as f:
+            with open(camino, encoding='utf-8') as f:
                 datos = json.load(f)
         except (ValueError, OSError) as e:
-            aviso('  %s  usuarios.json no se pudo leer: %s' % (ahora(), e))
-            self.responder(500, '{"error":"usuarios.json no es JSON valido"}')
+            aviso('  %s  %s no se pudo leer: %s' % (ahora(), que, e))
+            self.responder(500, '{"error":"no es JSON valido"}')
             return
         if isinstance(datos, list):
             cuantos = len(datos)
@@ -132,8 +167,12 @@ class Handler(BaseHTTPRequestHandler):
             cuantos = len(datos['usuarios'])
         else:
             cuantos = 0
-        aviso('  %s  %s se lleva usuarios.json (%d usuario(s))'
-              % (ahora(), self.client_address[0], cuantos))
+        if cuantos == 0:
+            aviso('  %s  %s pidio %s y NO TRAE NINGUN USUARIO'
+                  % (ahora(), self.client_address[0], que))
+        else:
+            aviso('  %s  %s se lleva %s (%d usuario(s))'
+                  % (ahora(), self.client_address[0], que, cuantos))
         self.responder(200, json.dumps(datos, ensure_ascii=False))
 
     def log_message(self, formato, *args):
@@ -141,23 +180,32 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def plantilla_usuarios():
+    """
+    La lista viene VACIA a proposito. Antes traia dos usuarios de ejemplo y, al pulsar
+    "Traer usuarios del PC", la impresora daba de alta a gente inventada.
+    El ejemplo queda solo como documentacion del formato.
+    """
     return {
         "_comentario": [
-            "Lista de gente a dar de alta en la impresora.",
-            "Cada usuario: nombre (minusculas, digitos y . _ -) y pin (4 a 8 digitos).",
-            "En la impresora: Ajustes > Respaldo > Traer usuarios del PC.",
+            "Gente NUEVA a dar de alta en la impresora, en bloque.",
+            "Rellena 'usuarios' y pulsa en el panel: Ajustes > Respaldo > Traer usuarios.",
+            "nombre: minusculas, digitos y . _ -    pin: de 4 a 8 digitos.",
             "NO borra a nadie: crea los que falten y actualiza el PIN de los que ya estan.",
-            "Para restaurar un respaldo, usa en su lugar respaldos/ultimo.json,",
-            "que trae 'huella' y conserva los PIN que ya tenia cada persona."
+            "",
+            "Para RESTAURAR la impresora a como estaba NO uses este fichero:",
+            "pulsa 'Restaurar ultimo respaldo', que usa respaldos/ultimo.json y",
+            "conserva el PIN que ya tenia cada persona."
         ],
-        "usuarios": [
+        "_ejemplo": [
             {"nombre": "ana", "pin": "1234"},
-            {"nombre": "luis", "pin": "4321"}
-        ]
+            {"nombre": "luis.perez", "pin": "4321"}
+        ],
+        "usuarios": []
     }
 
 
 def main():
+    desactivar_seleccion_rapida()
     if not os.path.exists(FICHERO_USUARIOS):
         with open(FICHERO_USUARIOS, 'w', encoding='utf-8') as f:
             json.dump(plantilla_usuarios(), f, indent=2, ensure_ascii=False)
@@ -176,7 +224,7 @@ def main():
     aviso('  Dejalo abierto. Ctrl+C para parar.')
     aviso('')
 
-    servidor = HTTPServer(('0.0.0.0', PUERTO), Handler)
+    servidor = ThreadingHTTPServer(('0.0.0.0', PUERTO), Handler)
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:

@@ -104,10 +104,15 @@ abierta, la impresora puede respaldar. Para que arranque con el PC, se pone un a
 directo al `.bat` en la carpeta que abre `shell:startup` (Win+R). En la impresora: **Ajustes → Respaldo → Poner IP del
 PC**. A partir de ahí:
 
-| En el panel | Qué hace |
-|---|---|
-| **Respaldar ahora** | Manda todo (usuarios, huellas, contadores, ajustes) por `POST /respaldo` |
-| **Traer usuarios del PC** | Lee `GET /usuarios.json` y da de alta a esa gente |
+| En el panel | Qué hace | Fichero en el PC |
+|---|---|---|
+| **Respaldar ahora** | Manda todo: usuarios, huellas, contadores, ajustes | crea `respaldos/…` |
+| **Restaurar último respaldo** | Devuelve el equipo a como estaba. **Cada persona conserva su PIN** | lee `respaldos/ultimo.json` |
+| **Dar de alta la lista del PC** | Alta en bloque de gente nueva, con el PIN que tú pongas | lee `usuarios.json` |
+
+Restaurar y dar de alta son **dos botones distintos a propósito**: son dos cosas
+distintas, y con uno solo la plantilla de ejemplo del servidor acabó dada de alta como
+si fueran usuarios de verdad.
 
 Además respalda **solo cada 30 minutos** si hay algo nuevo. Si el PC está apagado falla en
 silencio y reintenta a la vuelta siguiente: el respaldo nunca estorba a quien imprime.
@@ -118,10 +123,13 @@ En el PC quedan:
 - `herramientas/respaldos/ultimo.json` — el más reciente, para no buscar
 - `herramientas/usuarios.json` — la lista a importar (se crea una plantilla al arrancar)
 
-Para **restaurar** tras un borrado: copiar `respaldos/ultimo.json` sobre `usuarios.json`
-y pulsar Traer usuarios del PC. Ese fichero trae `huella`, así que **cada persona
-conserva el PIN que ya tenía**. Un `usuarios.json` escrito a mano usa `pin` en claro en su
-lugar. Importar **no borra a nadie**: crea los que falten y actualiza los que ya estén.
+Para **restaurar** tras un borrado no hay que copiar nada: basta pulsar **Restaurar
+último respaldo**. Para dar de alta gente nueva, se rellena `usuarios.json` con
+`{"usuarios": [{"nombre": "ana", "pin": "1234"}]}` y se pulsa el otro botón. La plantilla
+viene con la lista **vacía** a propósito: importarla sin rellenarla no da de alta a nadie.
+
+Ninguno de los dos **borra a nadie**: crean los que falten y actualizan los que ya estén.
+Si alguien sobra, se quita desde Ajustes → Usuarios → Quitar.
 
 > **El respaldo lleva los PIN.** La huella de un PIN de 4 dígitos se rompe probando las
 > 10.000 combinaciones, así que `herramientas/respaldos/` vale lo mismo que la lista de

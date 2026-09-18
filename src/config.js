@@ -67,8 +67,15 @@ export const config = {
     RESPALDO_PUERTO: 8099,
     /** Donde se manda el respaldo completo (POST con el JSON). */
     RESPALDO_RUTA_SUBIR: '/respaldo',
-    /** De donde se leen los usuarios a importar (GET). */
+    /** Gente NUEVA a dar de alta en bloque: la lista que escribe el administrador. */
     RESPALDO_RUTA_USUARIOS: '/usuarios.json',
+    /**
+     * El ÚLTIMO respaldo, para devolver el equipo a como estaba. Va por una ruta
+     * distinta a propósito: restaurar y dar de alta gente nueva son cosas distintas, y
+     * mezclarlas en un solo botón hizo que una plantilla de ejemplo se diera de alta
+     * como si fueran usuarios de verdad.
+     */
+    RESPALDO_RUTA_RESTAURAR: '/restaurar.json',
     /** Cada cuánto se intenta el respaldo automático, si hay algo nuevo que guardar. */
     RESPALDO_AUTO_MS: 30 * 60 * 1000,
     /** Margen tras arrancar antes del primer respaldo: que la red esté lista. */
