@@ -117,7 +117,12 @@ export function makePedk(opts = {}) {
             if (memoriaFalla === 'lanza') throw new Error('storage not ready');
             if (memoriaFalla === 'error') return 'ERROR_NO_DEVICE_BUSY';
             if (opts.uddObjeto) return JSON.parse(JSON.stringify(store));
-            return Object.keys(store).length === 0 ? '' : JSON.stringify(store);
+            if (Object.keys(store).length === 0) return '';
+            const s = JSON.stringify(store);
+            // Tope de tamaño: el equipo devolvió el JSON CORTADO A MEDIAS (medido el
+            // 18-09-2026). Con `uddTope` se reproduce, para comprobar que la app no
+            // pierde los datos por ello: el fichero de Object.save es quien manda.
+            return opts.uddTope && s.length > opts.uddTope ? s.slice(0, opts.uddTope) : s;
         },
         setUserDefinedData: (d) => {
             store = JSON.parse(JSON.stringify(d));
@@ -131,7 +136,17 @@ export function makePedk(opts = {}) {
      * el retorno. Los ficheros viven en el mock, no en el disco.
      */
     let ficheros = opts.ficheros ? JSON.parse(JSON.stringify(opts.ficheros)) : {};
-    if (!opts.sinObjectSave) {
+    /**
+     * `Object.save`/`Object.load` son GLOBALES, así que se los queda el último equipo
+     * creado. En una prueba que maneja dos equipos a la vez hay que volver a poner los
+     * del que toque: para eso está `mock.activar()`.
+     */
+    const activar = () => {
+        if (opts.sinObjectSave) {
+            delete Object.save;
+            delete Object.load;
+            return;
+        }
         Object.save = (nombre, obj) => {
             ficheros[String(nombre)] = JSON.stringify(obj);
             return -4.418332059740763e-95;
@@ -141,10 +156,8 @@ export function makePedk(opts = {}) {
             if (s === undefined) throw new Error('no such file: ' + nombre);
             return JSON.parse(s);
         };
-    } else {
-        delete Object.save;
-        delete Object.load;
-    }
+    };
+    activar();
 
     /**
      * `pedk.net.http`, para el respaldo. El callback se llama EN EL ACTO y no en otra
@@ -301,6 +314,8 @@ export function makePedk(opts = {}) {
         getFicheros: () => ficheros,
         /** Las peticiones HTTP que hizo la app: [{url, method, cuerpo}]. */
         peticiones: () => peticiones,
+        /** Vuelve a poner los Object.save/load de ESTE equipo (son globales). */
+        activar,
         /** El equipo vuelve a dejar leer la memoria (como si hubiera despertado). */
         memoriaResponde: () => { memoriaFalla = null; },
         /** Borra sólo los ficheros: imita una reinstalación si no sobreviven. */

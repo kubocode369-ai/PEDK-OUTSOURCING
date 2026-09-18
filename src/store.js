@@ -275,6 +275,32 @@ function guardarEnFichero() {
     return alguno;
 }
 
+/**
+ * Lo que se manda a `setUserDefinedData`: SÓLO lo pequeño y precioso.
+ *
+ * Medido el 18-09-2026: `getUserDefinedData()` devolvía el JSON CORTADO A MEDIAS
+ * ("unexpected end of string", "expecting ']'"), o sea que esta memoria tiene un tope
+ * de tamaño. Lo que abulta son `registro` (60 trabajos) y `vistos` (200 claves), que
+ * son prescindibles; los usuarios, sus huellas, los contadores y los ajustes caben de
+ * sobra. El registro completo vive en el fichero de `Object.save`, que no se corta.
+ *
+ * Perder `vistos` en esta copia significa que, si alguna vez hubiera que tirar SÓLO de
+ * ella, algún trabajo viejo podría contarse dos veces. Es mucho menos malo que quedarse
+ * sin la copia entera por no caber.
+ */
+function paraMemoria() {
+    return {
+        version: cache.version,
+        usuarios: cache.usuarios,
+        contadores: cache.contadores,
+        historialIniciado: cache.historialIniciado,
+        ajustes: cache.ajustes,
+    };
+}
+
+/** El aviso de que la memoria no se deja releer se da una vez, no en cada guardado. */
+let avisadoRelectura = false;
+
 function guardarEnMemoria() {
     const s = ns();
     if (!s || typeof s.setUserDefinedData !== 'function') {
@@ -287,9 +313,13 @@ function guardarEnMemoria() {
         try {
             todo = comoObjeto(s.getUserDefinedData()) || {};
         } catch (e) {
-            console.log('[store] no se pudo releer al guardar (' + (e && e.message) + '): se escribe sólo ' + CLAVE);
+            if (!avisadoRelectura) {
+                avisadoRelectura = true;
+                console.log('[store] la memoria no se deja releer (' + (e && e.message)
+                    + '): se escribe sólo ' + CLAVE + ' y manda el fichero');
+            }
         }
-        todo[CLAVE] = cache;
+        todo[CLAVE] = paraMemoria();
         s.setUserDefinedData(todo);
         return true;
     } catch (e) {
@@ -428,6 +458,7 @@ export function _recargar() {
     motivo = null;
     ultimoIntento = 0;
     escrituraComprobada = false;
+    avisadoRelectura = false;
     revision = 0;
 }
 

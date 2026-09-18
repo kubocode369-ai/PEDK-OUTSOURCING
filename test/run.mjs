@@ -266,6 +266,29 @@ hablar(); console.log('· Los datos sobreviven a un reinicio'); silenciar();
         && !!m.getStore().impresionPin, Object.keys(m.getFicheros()).join(','));
     silenciar();
 
+    // La memoria del equipo tiene un TOPE y devuelve el JSON cortado a medias (medido
+    // el 18-09-2026). No puede costar los datos: el fichero es quien manda, y a la
+    // memoria se le manda sólo lo pequeño y precioso, sin registro ni vistos.
+    const tope = makePedk({ uddTope: 120 });
+    globalThis.pedk = tope.pedk;
+    store._recargar();
+    store.agregarUsuario('ana', '1234');
+    for (let i = 0; i < 40; i++) store.contar('ana', { tipo: 'PRINT', paginas: 1, doc: 'documento-largo-' + i });
+    store._recargar();
+    hablar();
+    check('con la memoria cortada, los datos siguen ahí (manda el fichero)',
+        store.usuarios().length === 1 && store.contadorDe('ana').paginas === 40,
+        JSON.stringify(store.contadorDe('ana')));
+    check('a la memoria no se le manda el registro ni los vistos', (() => {
+        const d = tope.getStore().impresionPin;
+        return !!d && d.usuarios.length === 1 && d.registro === undefined && d.vistos === undefined;
+    })(), JSON.stringify(Object.keys(tope.getStore().impresionPin || {})));
+    silenciar();
+    // Object.save/load son globales y se los llevó `tope`: hay que devolverlos.
+    globalThis.pedk = m.pedk;
+    m.activar();
+    store._recargar();
+
     // Si se pierde un sitio, el otro salva los datos. Los dos casos.
     m.borrarFicheros();
     store._recargar();
@@ -445,6 +468,54 @@ hablar(); console.log('· Sesión y atribución'); silenciar();
     hablar();
     check('con el bloqueo apagado (p. ej. tras reinstalar), el arranque desbloquea lo que quedó',
         rep.ok && Object.values(mock.switches).every((v) => v === 'FUNC_SW_ON'), JSON.stringify(mock.switches));
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
+hablar(); console.log('· Cambiar de modo no puede dejar la impresora sorda'); silenciar();
+{
+    // Lo que pasó en el equipo el 18-09-2026: con el bloqueo puesto en modo SESIÓN se
+    // apaga NET_PRINT; al pasar a RETENCIÓN nadie lo volvía a encender, y NET_PRINT
+    // apagado mata también la impresión segura. La primera tanda de documentos (la que
+    // ya estaba retenida) salía bien, pero los siguientes NO LLEGABAN a la impresora:
+    // la lista salía vacía y parecía un fallo de la retención.
+    const m = equipo();
+    store.agregarUsuario('ana', '1234');
+    store.cambiarAjuste('bloqueoActivo', true);
+
+    store.cambiarAjuste('modo', 'sesion');
+    sesion.reposo();
+    hablar();
+    check('modo sesión + bloqueo apaga la impresión de red', m.switches.FUNC_T_NET_PRINT === 'FUNC_SW_OFF',
+        m.switches.FUNC_T_NET_PRINT);
+    silenciar();
+
+    store.cambiarAjuste('modo', 'retencion');
+    sesion.reposo();
+    hablar();
+    check('al pasar a retención, la impresión de red se vuelve a ENCENDER',
+        m.switches.FUNC_T_NET_PRINT === 'FUNC_SW_ON', m.switches.FUNC_T_NET_PRINT);
+    check('y la impresión segura sigue encendida', m.switches.FUNC_T_SECURE_PRINT === 'FUNC_SW_ON',
+        m.switches.FUNC_T_SECURE_PRINT);
+    silenciar();
+
+    // Y al revés: volver a modo sesión tiene que apagarla otra vez.
+    store.cambiarAjuste('modo', 'sesion');
+    sesion.reposo();
+    hablar();
+    check('volver a modo sesión la apaga de nuevo', m.switches.FUNC_T_NET_PRINT === 'FUNC_SW_OFF',
+        m.switches.FUNC_T_NET_PRINT);
+    silenciar();
+
+    // La copia sigue la misma regla: dejar de bloquearla tiene que reabrirla.
+    store.cambiarAjuste('bloquearCopia', true);
+    sesion.reposo();
+    const copiaCerrada = m.switches.FUNC_T_COPY === 'FUNC_SW_OFF';
+    store.cambiarAjuste('bloquearCopia', false);
+    sesion.reposo();
+    hablar();
+    check('dejar de bloquear la copia la reabre', copiaCerrada && m.switches.FUNC_T_COPY === 'FUNC_SW_ON',
+        copiaCerrada + ' / ' + m.switches.FUNC_T_COPY);
     silenciar();
 }
 

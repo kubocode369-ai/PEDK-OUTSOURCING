@@ -91,7 +91,23 @@ export function cerrar(motivo, ahora) {
 export function reposo() {
     const a = store.ajustes();
     if (a.bloqueoActivo) {
-        const r = cerradura.cerrar(queBloquear());
+        const que = queBloquear();
+        /*
+         * Lo que este modo NO bloquea hay que ABRIRLO, no sólo dejarlo estar: puede
+         * haber quedado cerrado por el modo anterior. `cerradura.cerrar` sólo apaga lo
+         * que se le pide, nunca vuelve a encender nada.
+         *
+         * Medido el 18-09-2026: con el bloqueo puesto en modo SESIÓN se apaga
+         * FUNC_T_NET_PRINT; al pasar a RETENCIÓN, `que.impresion` es false y nadie
+         * volvía a encenderlo. Y NET_PRINT apagado mata también la impresión segura,
+         * así que el PC no podía mandar nada más: los documentos nuevos no llegaban a
+         * la impresora y la lista salía vacía. El bloqueo tiene que ser declarativo.
+         */
+        const reabrir = { impresion: !que.impresion, copia: !que.copia };
+        if (reabrir.impresion || reabrir.copia) {
+            cerradura.abrir(reabrir);
+        }
+        const r = cerradura.cerrar(que);
         return { ok: r.ok, resumen: r.resumen };
     }
     // Bloqueo apagado: si quedó algo apagado (p. ej. tras reinstalar la app, que borra
