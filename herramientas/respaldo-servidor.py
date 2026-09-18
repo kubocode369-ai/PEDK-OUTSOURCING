@@ -80,6 +80,26 @@ def ahora():
     return datetime.now().strftime('%H:%M:%S')
 
 
+def puerto_ocupado():
+    """
+    Comprueba si YA hay un servidor escuchando.
+
+    En Windows, arrancar un segundo servidor sobre el mismo puerto NO da error: el
+    socket se ata igual, pero las peticiones se las sigue quedando el primero. Pasa al
+    dejarse una ventana vieja abierta y abrir otra tras actualizar el programa: parece
+    que funciona, y en realidad sigue corriendo el codigo antiguo.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.6)
+    try:
+        s.connect(('127.0.0.1', PUERTO))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
 def mi_ip():
     """La IP con la que este PC sale a la red, que es la que hay que teclear."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -128,9 +148,7 @@ class Handler(BaseHTTPRequestHandler):
         bonito = json.dumps(datos, indent=2, ensure_ascii=False)
         with open(destino, 'w', encoding='utf-8') as f:
             f.write(bonito)
-        # Copia fija, para no tener que buscar cuál es el último.
-        with open(os.path.join(CARPETA_RESPALDOS, 'ultimo.json'), 'w', encoding='utf-8') as f:
-            f.write(bonito)
+        guardar_ultimo(datos, bonito)
 
         escribir_csv_contadores(datos)
 
@@ -181,6 +199,73 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, formato, *args):
         pass        # se imprime lo interesante a mano, sin el ruido por defecto
+
+
+def cuantos_usuarios(datos):
+    if isinstance(datos, list):
+        return len(datos)
+    if isinstance(datos, dict) and isinstance(datos.get('usuarios'), list):
+        return len(datos['usuarios'])
+    return 0
+
+
+def leer_json(camino):
+    try:
+        with open(camino, encoding='utf-8') as f:
+            return json.load(f)
+    except (ValueError, OSError):
+        return None
+
+
+def guardar_ultimo(datos, bonito):
+    """
+    ultimo.json es EL ULTIMO RESPALDO BUENO, no literalmente el ultimo que llego.
+
+    Medido con el usuario el 18-09-2026: al borrar usuarios para probar la
+    restauracion, los respaldos siguientes pisaron ultimo.json con el estado ya vacio,
+    y cuando fue a restaurar no habia nada. El respaldo se destruia a si mismo justo
+    cuando hacia falta.
+
+    Asi que un respaldo SIN usuarios no pisa el ultimo bueno. El fichero con fecha si
+    se guarda siempre: ahi esta todo el historial por si hiciera falta.
+    """
+    camino = os.path.join(CARPETA_RESPALDOS, 'ultimo.json')
+    nuevos = cuantos_usuarios(datos)
+    previos = cuantos_usuarios(leer_json(camino)) if os.path.exists(camino) else 0
+
+    if nuevos == 0 and previos > 0:
+        aviso('  %s  AVISO: ese respaldo viene SIN usuarios. Se guarda con fecha, pero'
+              % ahora())
+        aviso('            NO se toca ultimo.json, que sigue con %d usuario(s).' % previos)
+        return
+    if nuevos < previos:
+        aviso('  %s  OJO: este respaldo trae %d usuario(s) y el anterior tenia %d.'
+              % (ahora(), nuevos, previos))
+    with open(camino, 'w', encoding='utf-8') as f:
+        f.write(bonito)
+
+
+def recuperar_ultimo():
+    """
+    Si ultimo.json se quedo sin usuarios (por la version vieja de este programa), se
+    rehace con el respaldo con fecha mas reciente que si tenga gente. Asi se arregla
+    solo, sin que nadie tenga que copiar ficheros a mano.
+    """
+    camino = os.path.join(CARPETA_RESPALDOS, 'ultimo.json')
+    if cuantos_usuarios(leer_json(camino)) > 0:
+        return
+    if not os.path.isdir(CARPETA_RESPALDOS):
+        return
+    fechados = sorted((n for n in os.listdir(CARPETA_RESPALDOS)
+                       if n.startswith('respaldo-') and n.endswith('.json')), reverse=True)
+    for nombre in fechados:
+        datos = leer_json(os.path.join(CARPETA_RESPALDOS, nombre))
+        if cuantos_usuarios(datos) > 0:
+            with open(camino, 'w', encoding='utf-8') as f:
+                json.dump(datos, f, indent=2, ensure_ascii=False)
+            aviso('  Se rehizo ultimo.json con %s (%d usuario(s)): el anterior estaba vacio.'
+                  % (nombre, cuantos_usuarios(datos)))
+            return
 
 
 def escribir_csv_contadores(datos):
@@ -246,6 +331,15 @@ def plantilla_usuarios():
 
 def main():
     desactivar_seleccion_rapida()
+    if puerto_ocupado():
+        aviso('')
+        aviso('  YA HAY UN SERVIDOR DE RESPALDO ABIERTO en el puerto %d.' % PUERTO)
+        aviso('')
+        aviso('  Cierra la otra ventana negra y vuelve a abrir esta.')
+        aviso('  (Si dejas las dos, sigue mandando la vieja y los cambios no se aplican.)')
+        aviso('')
+        return 1
+    recuperar_ultimo()
     if not os.path.exists(FICHERO_USUARIOS):
         with open(FICHERO_USUARIOS, 'w', encoding='utf-8') as f:
             json.dump(plantilla_usuarios(), f, indent=2, ensure_ascii=False)

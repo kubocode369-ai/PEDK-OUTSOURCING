@@ -99,6 +99,10 @@ En el PC: **doble clic en `herramientas/Respaldo impresora.bat`** (o, desde una 
 **La primera vez Windows preguntará si permite el acceso**: hay que decir **sí, en redes
 privadas**. Si se deniega, la impresora no llega al PC y el respaldo falla siempre.
 
+**No dejes dos ventanas abiertas a la vez.** En Windows la segunda se ata al mismo
+puerto sin dar error, pero las peticiones se las queda la primera: parece que funciona y
+en realidad corre el programa viejo. El servidor ya lo detecta y avisa.
+
 La ventana imprime la IP que hay que teclear, y hay que **dejarla abierta**: mientras esté
 abierta, la impresora puede respaldar. Para que arranque con el PC, se pone un acceso
 directo al `.bat` en la carpeta que abre `shell:startup` (Win+R). En la impresora: **Ajustes → Respaldo → Poner IP del
@@ -120,7 +124,9 @@ silencio y reintenta a la vuelta siguiente: el respaldo nunca estorba a quien im
 En el PC quedan:
 
 - `herramientas/respaldos/respaldo-AAAAMMDD-HHMMSS.json` — uno por respaldo, con fecha
-- `herramientas/respaldos/ultimo.json` — el más reciente, para no buscar
+- `herramientas/respaldos/ultimo.json` — **el último respaldo BUENO**, que es lo que
+  restaura el panel. Un respaldo que llegue sin usuarios no lo pisa: si no, borrar gente
+  para probar la restauración dejaba el respaldo vacío justo cuando hacía falta
 - `herramientas/respaldos/contadores.csv` — **quién imprimió cuánto, para Excel.** Se
   reescribe en cada respaldo, así que es siempre el dato de ahora mismo. No lleva
   huellas ni nada secreto: es lo que se puede pasar a contabilidad
