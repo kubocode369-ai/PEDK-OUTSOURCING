@@ -121,6 +121,9 @@ En el PC quedan:
 
 - `herramientas/respaldos/respaldo-AAAAMMDD-HHMMSS.json` — uno por respaldo, con fecha
 - `herramientas/respaldos/ultimo.json` — el más reciente, para no buscar
+- `herramientas/respaldos/contadores.csv` — **quién imprimió cuánto, para Excel.** Se
+  reescribe en cada respaldo, así que es siempre el dato de ahora mismo. No lleva
+  huellas ni nada secreto: es lo que se puede pasar a contabilidad
 - `herramientas/usuarios.json` — la lista a importar (se crea una plantilla al arrancar)
 
 Para **restaurar** tras un borrado no hay que copiar nada: basta pulsar **Restaurar

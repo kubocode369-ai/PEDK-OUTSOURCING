@@ -6,7 +6,9 @@ Se lanza en un PC de la misma red que la impresora y atiende dos cosas:
 
   POST /respaldo       la impresora manda TODO (usuarios, huellas de PIN, contadores).
                        Se guarda en respaldos/respaldo-AAAAMMDD-HHMMSS.json, y también
-                       como respaldos/ultimo.json para tenerlo siempre a mano.
+                       como respaldos/ultimo.json para tenerlo siempre a mano. Además se
+                       escribe respaldos/contadores.csv, que se abre con Excel y NO
+                       lleva nada secreto: es lo que se puede pasar a contabilidad.
 
   GET  /usuarios.json  gente NUEVA a dar de alta en bloque. Se sirve el fichero
                        usuarios.json de esta carpeta, que escribes tú con los PIN.
@@ -130,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
         with open(os.path.join(CARPETA_RESPALDOS, 'ultimo.json'), 'w', encoding='utf-8') as f:
             f.write(bonito)
 
+        escribir_csv_contadores(datos)
+
         usuarios = datos.get('usuarios') or []
         contadores = datos.get('contadores') or {}
         paginas = sum((c.get('paginas') or 0) + (c.get('paginasCopia') or 0)
@@ -179,6 +183,42 @@ class Handler(BaseHTTPRequestHandler):
         pass        # se imprime lo interesante a mano, sin el ruido por defecto
 
 
+def escribir_csv_contadores(datos):
+    """
+    Los contadores en un CSV que se abre con doble clic en Excel.
+
+    Es la parte del respaldo que se puede mirar y pasar a contabilidad: NO lleva
+    huellas ni nada secreto, solo quien imprimio cuanto. Se reescribe en cada respaldo,
+    asi que contadores.csv es siempre el dato de ahora mismo.
+
+    Separador ';' y BOM UTF-8 porque es lo que abre bien Excel en espanol: con ',' lo
+    mete todo en una sola columna, y sin BOM se comen los acentos.
+    """
+    contadores = datos.get('contadores') or {}
+    if not isinstance(contadores, dict):
+        return
+    filas = []
+    for quien, c in contadores.items():
+        if not isinstance(c, dict):
+            continue
+        impresiones = c.get('impresiones') or 0
+        paginas = c.get('paginas') or 0
+        copias = c.get('copias') or 0
+        paginas_copia = c.get('paginasCopia') or 0
+        filas.append((quien, impresiones, paginas, copias, paginas_copia, paginas + paginas_copia))
+    filas.sort(key=lambda f: f[5], reverse=True)       # quien mas gasta, primero
+
+    destino = os.path.join(CARPETA_RESPALDOS, 'contadores.csv')
+    with open(destino, 'w', encoding='utf-8-sig', newline='') as f:
+        f.write('Actualizado;%s\n\n' % datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        f.write('Persona;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n')
+        for fila in filas:
+            f.write('%s;%d;%d;%d;%d;%d\n' % fila)
+        if filas:
+            f.write('TOTAL;%d;%d;%d;%d;%d\n' % tuple(sum(f[i] for f in filas) for i in range(1, 6)))
+    return destino
+
+
 def plantilla_usuarios():
     """
     La lista viene VACIA a proposito. Antes traia dos usuarios de ejemplo y, al pulsar
@@ -219,6 +259,7 @@ def main():
     aviso('    (el puerto %d ya lo sabe la app)' % PUERTO)
     aviso('')
     aviso('    Los respaldos se guardan en:  %s' % CARPETA_RESPALDOS)
+    aviso('    Los contadores, para Excel, en:  %s' % os.path.join(CARPETA_RESPALDOS, 'contadores.csv'))
     aviso('    Los usuarios a importar se leen de:  %s' % FICHERO_USUARIOS)
     aviso('')
     aviso('  Dejalo abierto. Ctrl+C para parar.')

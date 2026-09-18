@@ -389,15 +389,6 @@ export function respaldo() {
     };
 }
 
-/** Los contadores en la forma de un informe, sin nada secreto. */
-export function informeContadores() {
-    return {
-        formato: 1,
-        totales: totales(),
-        porPersona: contadores(),
-    };
-}
-
 /**
  * Mete usuarios de un respaldo o de una lista preparada a mano.
  *
