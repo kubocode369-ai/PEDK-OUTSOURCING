@@ -12,9 +12,8 @@ import { COLOR, ambito, boton, etiqueta, pantalla, paginador, paginar, recortar,
 import { mostrar, repintar } from './router.js';
 import * as store from './store.js';
 import * as cerradura from './cerradura.js';
-import * as sesion from './sesion.js';
-import * as retencion from './retencion.js';
 import * as respaldo from './respaldo.js';
+import * as acciones from './acciones.js';
 import { abrirDiagnostico } from './diagnostico.js';
 
 let alSalir = null;
@@ -118,83 +117,32 @@ function estadoCerradura() {
     return 'Impresión desde PC: ' + (b === null ? 'no se sabe' : b ? 'bloqueada' : 'abierta');
 }
 
-function alternarBloqueo() {
-    const a = store.ajustes();
-    if (a.bloqueoActivo) {
-        store.cambiarAjuste('bloqueoActivo', false);
-        const r = cerradura.abrir();
-        decir(r.ok ? 'Bloqueo apagado: cualquiera imprime' : r.resumen, r.ok ? COLOR.aviso : COLOR.peligro);
-        repintar();
-        return;
-    }
-    if (store.usuarios().filter((u) => u.activo !== false).length === 0) {
-        decir('Dé de alta al menos un usuario antes', COLOR.peligro);
-        repintar();
-        return;
-    }
-    store.cambiarAjuste('bloqueoActivo', true);
-    const r = sesion.reposo();
-    if (!r.ok) {
-        // Un bloqueo a medias es peor que ninguno: da falsa seguridad.
-        store.cambiarAjuste('bloqueoActivo', false);
-        cerradura.abrir();
-        decir('No se pudo bloquear: ' + r.resumen, COLOR.peligro);
-    } else if (a.modo === 'retencion') {
-        decir('Activo: sólo se imprime con usuario y PIN', COLOR.ok);
-    } else {
-        decir('Bloqueado. Compruébelo con Diagnóstico > Probar', COLOR.ok);
-    }
+/* La lógica vive en acciones.js, compartida con la web: aquí sólo se enseña el resultado. */
+function contar(r) {
+    decir(r.texto, r.nivel === 'ok' ? COLOR.ok : r.nivel === 'aviso' ? COLOR.aviso : COLOR.peligro);
     repintar();
 }
 
+function alternarBloqueo() {
+    contar(acciones.fijarBloqueo(!store.ajustes().bloqueoActivo));
+}
+
 function alternarModo() {
-    const a = store.ajustes();
-    if (a.modo === 'retencion') {
-        store.cambiarAjuste('modo', 'sesion');
-        decir('Modo sesión: se desbloquea al entrar', COLOR.ok);
-    } else {
-        let d = retencion.disponible();
-        if (!d.ok) {
-            retencion.encenderFuncion();
-            d = retencion.disponible();
-        }
-        if (!d.ok) {
-            decir('Este equipo no retiene: ' + d.detalle, COLOR.peligro);
-            repintar();
-            return;
-        }
-        store.cambiarAjuste('modo', 'retencion');
-        decir('Modo retención: el PC envía como confidencial', COLOR.ok);
-    }
-    sesion.reposo();
-    repintar();
+    contar(acciones.fijarModo(store.ajustes().modo === 'retencion' ? 'sesion' : 'retencion'));
 }
 
 function siguienteDuracion() {
     const ops = config.MINUTOS_SESION_OPCIONES;
     const i = ops.indexOf(store.ajustes().minutosSesion);
-    store.cambiarAjuste('minutosSesion', ops[(i + 1) % ops.length]);
-    repintar();
+    contar(acciones.fijarMinutosSesion(ops[(i + 1) % ops.length]));
 }
 
 function alternarCopia() {
-    const a = store.ajustes();
-    const nuevo = !a.bloquearCopia;
-    store.cambiarAjuste('bloquearCopia', nuevo);
-    if (a.bloqueoActivo) {
-        const r = nuevo ? cerradura.cerrar({ impresion: false, copia: true }) : cerradura.abrir({ impresion: false, copia: true });
-        decir(r.resumen, r.ok ? COLOR.ok : COLOR.peligro);
-    } else {
-        decir(nuevo ? 'Se aplicará al encender el bloqueo' : 'Copia libre', COLOR.suave);
-    }
-    repintar();
+    contar(acciones.fijarBloqueoCopia(!store.ajustes().bloquearCopia));
 }
 
 function desbloquearTodo() {
-    store.cambiarAjuste('bloqueoActivo', false);
-    const r = cerradura.abrir();
-    decir(r.ok ? 'Equipo desbloqueado y bloqueo apagado' : r.resumen, r.ok ? COLOR.ok : COLOR.peligro);
-    repintar();
+    contar(acciones.desbloquearTodo());
 }
 
 /* ------------------------------------------------------------------ */

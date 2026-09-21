@@ -17,6 +17,9 @@
 import { config } from './config.js';
 import { guard } from './guard.js';
 import * as store from './store.js';
+import * as acciones from './acciones.js';
+import * as cerradura from './cerradura.js';
+import * as respaldo from './respaldo.js';
 
 const BASE = '/pedk/app_notify/' + config.WEB_APP;
 /** Clave del freno de intentos: compartida con nadie, sólo la web. */
@@ -242,6 +245,7 @@ function paginarFilas(token, ruta, filas, pagina, armar) {
 function paginaUsuarios(token, msg, pagina) {
     const lista = store.usuarios();
     const cab = '<span>' + enlace(token, 'contadores', '', 'Contadores') + ' · '
+        + enlace(token, 'ajustes', '', 'Ajustes') + ' · '
         + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
     const aviso = store.pinAdminDeFabrica()
         ? '<p class="caja aviso">El PIN de administrador es el de fábrica: cámbielo en el panel.</p>' : '';
@@ -389,6 +393,112 @@ function paginaUsuario(token, nombre, msg) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Ajustes                                                              */
+/* ------------------------------------------------------------------ */
+
+/** Mensaje de acciones.js ({ok, texto, nivel}) a mensaje de la web. */
+function deAccion(r) {
+    return { ok: r.ok, texto: r.texto };
+}
+
+/**
+ * Un solo formulario con un botón por acción (name="a"): cada ajuste es un botón que
+ * lo cambia al otro valor, igual que en el panel.
+ */
+function paginaAjustes(token, msg) {
+    const a = store.ajustes();
+    const b = cerradura.impresionBloqueada();
+    const boton = (valor, texto, confirmar) => '<button name="a" value="' + valor + '"'
+        + (confirmar ? ' onclick="return confirm(\'' + confirmar + '\')"' : '') + '>' + texto + '</button> ';
+    const minutos = config.MINUTOS_SESION_OPCIONES.map((m) => '<option' + (m === a.minutosSesion ? ' selected' : '')
+        + '>' + m + '</option>').join('');
+    const cab = '<span>' + enlace(token, 'usuarios', '', 'Usuarios') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
+    return documento('Ajustes', cab, mensajeHtml(msg) + '<div class="caja">' + formulario(token, 'ajuste',
+        '<p>Modo: <b>' + (a.modo === 'retencion' ? 'retención' : 'sesión') + '</b> '
+        + boton('modo', a.modo === 'retencion' ? 'Pasar a sesión' : 'Pasar a retención') + '</p>'
+        + '<p>Bloqueo: <b>' + (a.bloqueoActivo ? 'ENCENDIDO' : 'apagado') + '</b> '
+        + boton('bloqueo', a.bloqueoActivo ? 'Apagar' : 'Encender', a.bloqueoActivo ? '¿Apagar? Cualquiera podrá imprimir.' : '')
+        + '<br><small>Impresión desde PC: ' + (b === null ? 'no se sabe' : b ? 'bloqueada' : 'abierta') + '</small></p>'
+        + '<p>Copia: <b>' + (a.bloquearCopia ? 'con PIN' : 'libre') + '</b> '
+        + boton('copia', a.bloquearCopia ? 'Dejar libre' : 'Pedir PIN') + '</p>'
+        + '<p>Sesión: <select name="minutos">' + minutos + '</select> min ' + boton('minutos', 'Guardar') + '</p>'
+        + '<p>' + boton('desbloquear', 'Desbloquear equipo', '¿Desbloquear todo y apagar el bloqueo?') + '</p>')
+        + '</div><div class="caja">' + enlace(token, 'pinadmin', '', 'Cambiar PIN de administrador') + ' · '
+        + enlace(token, 'respaldo', '', 'Respaldo') + '</div>');
+}
+
+function paginaPinAdmin(token, msg) {
+    const campo = (nombre, texto) => '<p>' + texto + '<br><input type="password" name="' + nombre
+        + '" size="10" inputmode="numeric"></p>';
+    return documento('PIN de administrador', enlace(token, 'ajustes', '', 'Volver'), mensajeHtml(msg)
+        + '<div class="caja">' + formulario(token, 'pinadmin', campo('actual', 'PIN actual')
+            + campo('nuevo', 'PIN nuevo (' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos)')
+            + campo('repetir', 'Repita el PIN nuevo') + '<button>Cambiar</button>')
+        + '<p><small>Es el mismo PIN para el panel de la impresora y para esta página. '
+        + 'Si se olvida, sólo se recupera reinstalando la app (se pierden los datos).</small></p></div>');
+}
+
+function paginaRespaldo(token, msg) {
+    const e = respaldo.estado();
+    const u = e.ultimo;
+    const boton = (valor, texto, confirmar) => '<button name="a" value="' + valor + '"'
+        + (confirmar ? ' onclick="return confirm(\'' + confirmar + '\')"' : '') + '>' + texto + '</button> ';
+    return documento('Respaldo', enlace(token, 'ajustes', '', 'Volver') + ' · ' + enlace(token, 'respaldo', '', 'Actualizar'),
+        mensajeHtml(msg) + '<div class="caja"><p>PC: <b>' + (e.destino ? escapar(e.destino) + ':' + config.RESPALDO_PUERTO : 'ninguno (apagado)')
+        + '</b><br>Último: <span class="' + (u.ok === null ? '' : u.ok ? 'ok' : 'error') + '">'
+        + escapar((u.cuando ? u.cuando + ' · ' : '') + u.detalle) + '</span>'
+        + (e.enCurso ? '<br><b>En curso…</b> pulse Actualizar en unos segundos.' : '') + '</p>'
+        + formulario(token, 'respaldo', '<p>IP del PC: <input name="ip" size="15" value="' + escapar(e.destino || '') + '"> '
+            + boton('ip', 'Guardar') + boton('apagar', 'Apagar') + '</p><p>'
+            + boton('subir', 'Respaldar ahora')
+            + boton('restaurar', 'Restaurar último respaldo', '¿Devolver los usuarios del último respaldo, con su PIN?')
+            + boton('altas', 'Alta de usuarios.json', '¿Dar de alta a la gente escrita en usuarios.json del PC?') + '</p>')
+        + '<p><small>En el PC: Respaldo impresora.bat, abierto. El respaldo lleva los PIN: guárdelo como tal.</small></p></div>');
+}
+
+/** Acciones de /ajuste. */
+function hacerAjuste(d) {
+    const a = store.ajustes();
+    switch (d.a) {
+        case 'modo': return acciones.fijarModo(a.modo === 'retencion' ? 'sesion' : 'retencion');
+        case 'bloqueo': return acciones.fijarBloqueo(!a.bloqueoActivo);
+        case 'copia': return acciones.fijarBloqueoCopia(!a.bloquearCopia);
+        case 'minutos': return acciones.fijarMinutosSesion(d.minutos);
+        case 'desbloquear': return acciones.desbloquearTodo();
+        default: return { ok: false, texto: 'Acción desconocida.' };
+    }
+}
+
+/**
+ * Acciones de /respaldo. Van a otro equipo y no esperan: la página enseña "En curso" y
+ * el resultado aparece al pulsar Actualizar.
+ */
+function hacerRespaldo(d) {
+    if (d.a === 'ip') {
+        return respaldo.fijarDestino(String(d.ip || '').trim())
+            ? { ok: true, texto: d.ip ? 'IP guardada.' : 'Respaldo apagado.' }
+            : { ok: false, texto: 'IP no válida (ej. 192.168.0.10).' };
+    }
+    if (d.a === 'apagar') {
+        respaldo.fijarDestino(null);
+        return { ok: true, texto: 'Respaldo apagado.' };
+    }
+    if (!respaldo.destino()) {
+        return { ok: false, texto: 'Ponga primero la IP del PC.' };
+    }
+    if (d.a === 'subir') {
+        respaldo.exportar();
+    } else if (d.a === 'restaurar') {
+        respaldo.importar('restaurar');
+    } else if (d.a === 'altas') {
+        respaldo.importar('usuarios');
+    } else {
+        return { ok: false, texto: 'Acción desconocida.' };
+    }
+    return { ok: true, texto: 'Pedido al PC. Pulse Actualizar para ver cómo fue.' };
+}
+
+/* ------------------------------------------------------------------ */
 /* Rutas                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -434,6 +544,8 @@ export function atenderRuta(p, ahora) {
         return html(paginaLogin(token ? { ok: false, texto: 'La sesión caducó. Vuelva a entrar.' } : null));
     }
 
+    // Todo lo que cambia algo va por POST: un enlace o una recarga no deben dar de alta ni borrar.
+    const cambia = p.metodo === 'POST';
     const nombre = store.normalizarUsuario(d.nombre || d.n);
     const anotar = (msg) => {
         console.log('[web] ' + p.ruta + ' ' + (d.a || '') + ' ' + nombre + ': ' + msg.texto);
@@ -450,14 +562,21 @@ export function atenderRuta(p, ahora) {
     if (p.ruta === '/csv') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteCsv(d.desde) };
     }
+    if (p.ruta === '/ajustes') {
+        return html(paginaAjustes(token));
+    }
+    if (p.ruta === '/pinadmin' && !cambia) {
+        return html(paginaPinAdmin(token));
+    }
+    if (p.ruta === '/respaldo' && !cambia) {
+        return html(paginaRespaldo(token));
+    }
     if (p.ruta === '/nuevo') {
         return html(paginaNuevo(token));
     }
     if (p.ruta === '/usuario') {
         return html(paginaUsuario(token, nombre));
     }
-    // Todo lo que cambia algo va por POST: un enlace o una recarga no deben dar de alta ni borrar.
-    const cambia = p.metodo === 'POST';
     if (p.ruta === '/alta' && cambia) {
         const r = store.agregarUsuario(d.nombre, d.pin, { nombreCompleto: d.nombreCompleto, cedula: d.cedula });
         return r.ok
@@ -488,6 +607,37 @@ export function atenderRuta(p, ahora) {
             msg = { ok: false, texto: 'Acción desconocida.' };
         }
         return html(paginaUsuario(token, nombre, anotar(msg)));
+    }
+    if (p.ruta === '/ajuste' && cambia) {
+        return html(paginaAjustes(token, anotar(deAccion(hacerAjuste(d)))));
+    }
+    if (p.ruta === '/respaldo' && cambia) {
+        return html(paginaRespaldo(token, anotar(hacerRespaldo(d))));
+    }
+    if (p.ruta === '/pinadmin' && cambia) {
+        // Pide el PIN actual aunque ya haya sesión: una pestaña olvidada abierta no
+        // debe bastar para quedarse con el equipo. Cuenta para el freno de intentos.
+        const espera = store.esperaPorIntentos(FRENO, t);
+        let msg;
+        if (espera > 0) {
+            msg = { ok: false, texto: 'Demasiados intentos. Espere ' + espera + ' min.' };
+        } else if (!store.esPinAdmin(d.actual)) {
+            store.anotarFallo(FRENO, t);
+            msg = { ok: false, texto: 'El PIN actual no es correcto.' };
+        } else if (!store.pinValido(d.nuevo)) {
+            msg = { ok: false, texto: 'El PIN nuevo debe tener de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos.' };
+        } else if (d.nuevo !== d.repetir) {
+            msg = { ok: false, texto: 'Los dos PIN nuevos no coinciden.' };
+        } else {
+            store.olvidarFallos(FRENO);
+            store.cambiarPinAdmin(d.nuevo);
+            // Las demás sesiones abiertas con el PIN viejo se cierran.
+            for (const k of Array.from(sesiones.keys())) {
+                if (k !== token) sesiones.delete(k);
+            }
+            return html(paginaAjustes(token, anotar({ ok: true, texto: 'PIN de administrador cambiado. Vale ya también en el panel.' })));
+        }
+        return html(paginaPinAdmin(token, anotar(msg)));
     }
     if (p.ruta === '/cero' && cambia) {
         const t = store.totales();

@@ -30,6 +30,7 @@ import * as diagnostico from './diagnostico.js';
 import * as vigia from './vigia.js';
 import * as respaldo from './respaldo.js';
 import * as web from './web.js';
+import * as acciones from './acciones.js';
 import { abrirAjustes } from './ajustes.js';
 
 const { ScreenCtrl, KeyCtrl } = pedk.ui;
@@ -573,6 +574,13 @@ function arrancar() {
     } catch (e) { console.log('[arranque] respaldo: ' + (e && e.message)); }
     try {
         web.instalar();
+        // Un cambio de modo o de bloqueo hecho desde la web tiene que verse en el panel.
+        acciones.alCambiar(() => {
+            refrescarCerradura();
+            if (pantallaActiva() === 'inicio') {
+                repintarSiSePuede(true);
+            }
+        });
     } catch (e) { console.log('[arranque] web: ' + (e && e.message)); }
 
     setInterval(guard('reloj', () => {

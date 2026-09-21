@@ -1081,6 +1081,73 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     store.restaurarUsuarios([{ nombre: 'jperez', pin: '1234' }]);
     check('un fichero sin esos datos no los borra', store.usuarios().filter((u) => u.nombre === 'jperez')[0].cedula === '99999');
 
+    // Ajustes desde la web: la MISMA lógica que el panel (acciones.js).
+    const acciones = await import('./.build/acciones.mjs');
+    // Un equipo que SÍ retiene (el simulado por defecto no), con una persona dada de alta.
+    equipo({ retencion: { KuboC: [] } });
+    web._reiniciar();
+    web.instalar();
+    store.agregarUsuario('jperez', '1234');
+    const sA = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+    let avisos = 0;
+    acciones.alCambiar(() => { avisos++; });
+    const aj = pedir('/ajustes', 'GET', 's=' + sA).body;
+    check('la página de ajustes cabe y enseña modo y bloqueo', web.bytesUtf8(aj) <= config.WEB_MAX_BYTES
+        && /Modo: <b>sesión/.test(aj) && /Bloqueo: <b>apagado/.test(aj), web.bytesUtf8(aj));
+    pedir('/ajuste', 'GET', 's=' + sA + '&a=bloqueo');
+    check('por GET no cambia ningún ajuste', !store.ajustes().bloqueoActivo);
+    resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=bloqueo');
+    check('encender el bloqueo desde la web bloquea el equipo de verdad',
+        store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === true && /Bloqueo: <b>ENCENDIDO/.test(resp.body), resp.body.slice(-300));
+    check('y avisa al panel para que repinte', avisos > 0);
+    resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
+    check('pasar a retención reabre la impresión desde PC (si no, no llegan los documentos)',
+        store.ajustes().modo === 'retencion' && cerradura.impresionBloqueada() === false, resp.body.slice(-300));
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
+    check('y volver a sesión la cierra', store.ajustes().modo === 'sesion' && cerradura.impresionBloqueada() === true);
+    sesion.abrir('jperez', '1234');
+    resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
+    check('con alguien usando la impresora no cambia el modo', store.ajustes().modo === 'sesion' && /usando la impresora/.test(resp.body));
+    sesion.cerrar('prueba');
+    resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=minutos&minutos=7');
+    check('minutos fuera de las opciones no valen', /no válida/.test(resp.body));
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=minutos&minutos=' + config.MINUTOS_SESION_OPCIONES[0]);
+    check('minutos válidos se guardan', store.ajustes().minutosSesion === config.MINUTOS_SESION_OPCIONES[0]);
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=desbloquear');
+    check('desbloquear apaga el bloqueo y abre el equipo', !store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === false);
+
+    // PIN de administrador.
+    const otraSesion = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+    check('la página del PIN cabe', web.bytesUtf8(pedir('/pinadmin', 'GET', 's=' + sA).body) <= config.WEB_MAX_BYTES);
+    resp = pedir('/pinadmin', 'POST', 's=' + sA + '&actual=0000&nuevo=13579&repetir=13579');
+    check('sin el PIN actual no se cambia', /no es correcto/.test(resp.body) && store.pinAdminDeFabrica());
+    resp = pedir('/pinadmin', 'POST', 's=' + sA + '&actual=' + config.PIN_ADMIN_FABRICA + '&nuevo=13579&repetir=13570');
+    check('si los dos nuevos no coinciden no se cambia', /no coinciden/.test(resp.body) && store.pinAdminDeFabrica());
+    resp = pedir('/pinadmin', 'POST', 's=' + sA + '&actual=' + config.PIN_ADMIN_FABRICA + '&nuevo=13579&repetir=13579');
+    check('cambia el PIN de administrador (el mismo del panel)', /cambiado/.test(resp.body) && store.esPinAdmin('13579') && !store.pinAdminDeFabrica());
+    check('y cierra las otras sesiones, no la propia', /caducó/.test(pedir('/usuarios', 'GET', 's=' + otraSesion).body)
+        && /Usuarios \(/.test(pedir('/usuarios', 'GET', 's=' + sA).body));
+    check('el PIN de fábrica ya no entra', /incorrecto/.test(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body));
+    store.olvidarFallos('#web-admin');
+
+    // Respaldo.
+    resp = pedir('/respaldo', 'POST', 's=' + sA + '&a=subir');
+    check('respaldar sin IP lo dice', /Ponga primero la IP/.test(resp.body));
+    resp = pedir('/respaldo', 'POST', 's=' + sA + '&a=ip&ip=192.168.1');
+    check('rechaza una IP mal escrita', /IP no válida/.test(resp.body) && !store.ajustes().respaldoIp);
+    pedir('/respaldo', 'POST', 's=' + sA + '&a=ip&ip=192.168.0.50');
+    const antesPet = mock.peticiones().length;
+    resp = pedir('/respaldo', 'POST', 's=' + sA + '&a=subir');
+    const pet = mock.peticiones()[mock.peticiones().length - 1];
+    check('guarda la IP y respalda al PC', store.ajustes().respaldoIp === '192.168.0.50' && mock.peticiones().length > antesPet
+        && pet.url === 'http://192.168.0.50:8099/respaldo' && pet.method === 'POST', pet && pet.url);
+    check('la página de respaldo cabe y enseña el resultado', web.bytesUtf8(resp.body) <= config.WEB_MAX_BYTES
+        && /192\.168\.0\.50:8099/.test(resp.body), web.bytesUtf8(resp.body));
+    pedir('/respaldo', 'POST', 's=' + sA + '&a=restaurar');
+    check('restaurar lo pide a su ruta', mock.peticiones()[mock.peticiones().length - 1].url === 'http://192.168.0.50:8099/restaurar.json');
+    pedir('/respaldo', 'POST', 's=' + sA + '&a=apagar');
+    check('apagar el respaldo', !store.ajustes().respaldoIp);
+
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
     delete mock.pedk.net.http.Response;
