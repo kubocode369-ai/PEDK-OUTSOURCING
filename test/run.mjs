@@ -888,6 +888,9 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('lee ruta, método y campos de url y cuerpo',
         JSON.stringify(web.leerPeticion({ url: 'http://1.2.3.4' + BASE + '/usuarios/alta/?s=abc', method: 'post', body: 'nombre=Pe%C3%B1a+x&pin=12' }))
         === JSON.stringify({ ruta: '/usuarios/alta', metodo: 'POST', datos: { s: 'abc', nombre: 'Peña x', pin: '12' } }));
+    check('entiende acentos en Latin-1 además de UTF-8',
+        web.leerPeticion({ url: BASE, body: 'a=Jos%E9+P%E9rez+%D1u&b=Jos%C3%A9' }).datos.a === 'José Pérez Ñu'
+        && web.leerPeticion({ url: BASE, body: 'b=Jos%C3%A9' }).datos.b === 'José');
     check('acepta el cuerpo como RequestBody o JSON',
         web.leerPeticion({ url: BASE, body: { data: { pin: 1 } } }).datos.pin === '1'
         && web.leerPeticion({ url: BASE, body: '{"pin":"2"}' }).datos.pin === '2');

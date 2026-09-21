@@ -57,11 +57,17 @@ function describir(req) {
     return partes.join(' ') || '(sin campos)';
 }
 
+/**
+ * Un navegador manda los formularios en UTF-8 (la página lo declara). Pero algo que
+ * mande Latin-1 ("é" = %E9) hace lanzar a decodeURIComponent, y antes se guardaba el
+ * texto crudo ("Jos%E9+P%E9rez", medido con curl): ahora cada %XX se lee como Latin-1.
+ */
 function decodificar(s) {
+    const t = String(s).replace(/\+/g, ' ');
     try {
-        return decodeURIComponent(String(s).replace(/\+/g, ' '));
+        return decodeURIComponent(t);
     } catch (e) {
-        return String(s);
+        return t.replace(/%([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
     }
 }
 
