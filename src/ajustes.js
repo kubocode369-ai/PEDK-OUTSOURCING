@@ -460,13 +460,14 @@ function renderRespaldoIp() {
 
 function renderContadores() {
     ambito('ajc');
-    const info = paginar(store.contadores(), pagina, config.FILAS_POR_PAGINA + 1);
+    // Todos los usuarios, también quien no imprimió nada: que no imprima también es un dato.
+    const info = paginar(store.contadoresDeTodos(), pagina, config.FILAS_POR_PAGINA + 1);
     pagina = info.pagina;
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 300, 22, 'Contadores', COLOR.texto));
     w.push(boton('volver', 376, 6, 92, 30, 'Volver', COLOR.acento, () => ir('menu')));
     if (info.total === 0) {
-        w.push(etiqueta('vacio', 12, 70, 456, 22, 'Todavía no hay trabajos contados', COLOR.suave, 'center'));
+        w.push(etiqueta('vacio', 12, 70, 456, 22, 'No hay usuarios ni trabajos contados', COLOR.suave, 'center'));
     }
     let y = 44;
     for (const r of info.items) {

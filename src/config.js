@@ -15,6 +15,8 @@ export const config = {
 
     /** Nombre de usuario: minúsculas, dígitos y . _ - */
     USUARIO_MAX: 20,
+    /** Nombre y apellidos de la persona, para saber quién es cada usuario. */
+    NOMBRE_COMPLETO_MAX: 60,
 
     /** Intentos fallidos seguidos antes de bloquear a ese usuario un rato. */
     INTENTOS_MAX: 5,

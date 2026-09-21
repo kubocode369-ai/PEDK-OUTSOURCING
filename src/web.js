@@ -243,6 +243,7 @@ function paginaUsuarios(token, msg, pagina) {
         const c = store.contadorDe(u.nombre);
         return '<tr' + (u.activo === false ? ' class="inactivo"' : '') + '><td>'
             + enlace(token, 'usuario', '&n=' + encodeURIComponent(u.nombre), '<b>' + escapar(u.nombre) + '</b>')
+            + (u.nombreCompleto ? '<br><small>' + escapar(u.nombreCompleto) + '</small>' : '')
             + '</td><td>' + (u.activo === false ? 'desactivado' : 'activo') + '</td><td>'
             + (c.paginas + c.paginasCopia) + ' pág.</td></tr>';
     });
@@ -256,13 +257,26 @@ function persona(quien) {
     return quien === store.SIN_SESION ? 'Sin identificar' : quien;
 }
 
+/** Qué se ve de alguien en los contadores: su nombre completo, o por qué no hay. */
+function detalle(c) {
+    if (c.quien === store.SIN_SESION) return '';
+    if (!c.existe) return 'usuario borrado';
+    return c.nombreCompleto + (c.activo ? '' : ' (desactivado)');
+}
+
 function paginaContadores(token, msg, pagina) {
-    const lista = store.contadores();
+    const lista = store.contadoresDeTodos();
     const t = store.totales();
     const cab = '<span>' + enlace(token, 'usuarios', '', 'Usuarios') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
-    const filas = lista.map((c) => '<tr><td><b>' + escapar(persona(c.quien)) + '</b></td><td>' + c.impresiones
-        + '</td><td>' + c.paginas + '</td><td>' + c.copias + '</td><td>' + c.paginasCopia + '</td><td>'
-        + (c.paginas + c.paginasCopia) + '</td></tr>');
+    // Quien no ha impreso nada sale en gris: también es un dato.
+    const filas = lista.map((c) => {
+        const total = c.paginas + c.paginasCopia;
+        const d = detalle(c);
+        return '<tr' + (total ? '' : ' class="inactivo"') + '><td><b>' + escapar(persona(c.quien)) + '</b>'
+            + (d ? '<br><small>' + escapar(d) + '</small>' : '') + '</td><td>' + c.impresiones
+            + '</td><td>' + c.paginas + '</td><td>' + c.copias + '</td><td>' + c.paginasCopia + '</td><td>'
+            + total + '</td></tr>';
+    });
     const acciones = '<p><button data-s="' + token + '" onclick="bajarCsv(this)">Descargar CSV (Excel)</button></p>'
         + formulario(token, 'cero', '<button onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
             + 'Descargue antes el CSV.\')">Poner a cero</button>');
@@ -272,7 +286,7 @@ function paginaContadores(token, msg, pagina) {
         + (lista.length
             ? '<table><tr><td>Persona</td><td>Impr.</td><td>Pág.</td><td>Copias</td><td>Pág. copia</td><td>Total</td></tr>'
                 + f + '</table>'
-            : 'Aún no hay nada contado.')
+            : 'No hay usuarios ni nada contado.')
         + pie + '</div><div class="caja">' + acciones + '</div><script src="csv.js"></script>'));
 }
 
@@ -283,14 +297,18 @@ function paginaContadores(token, msg, pagina) {
  * La primera línea de cada parte es "SIGUIENTE;<índice o -1>" y el navegador la quita.
  */
 export function parteCsv(desde) {
-    const lista = store.contadores();
+    const lista = store.contadoresDeTodos();
     const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
-    let texto = i0 === 0 ? 'Persona;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n' : '';
+    let texto = i0 === 0
+        ? 'Usuario;Nombre completo;Cedula;Estado;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n' : '';
     let i = i0;
     const margen = 120;   // la línea SIGUIENTE y la de TOTAL
     for (; i < lista.length; i++) {
         const c = lista[i];
-        const linea = persona(c.quien).replace(/[;\r\n]/g, ' ') + ';' + c.impresiones + ';' + c.paginas + ';'
+        const estado = c.quien === store.SIN_SESION ? '' : !c.existe ? 'borrado' : c.activo ? 'activo' : 'desactivado';
+        const linea = [persona(c.quien), c.nombreCompleto, c.cedula, estado]
+            .map((x) => String(x).replace(/[;\r\n"]/g, ' ')).join(';')
+            + ';' + c.impresiones + ';' + c.paginas + ';'
             + c.copias + ';' + c.paginasCopia + ';' + (c.paginas + c.paginasCopia) + '\n';
         if (i > i0 && bytesUtf8(texto + linea) + margen > config.WEB_MAX_BYTES) {
             break;
@@ -300,7 +318,7 @@ export function parteCsv(desde) {
     if (i >= lista.length) {
         const t = store.totales();
         if (lista.length) {
-            texto += 'TOTAL;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia + ';'
+            texto += 'TOTAL;;;;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia + ';'
                 + (t.paginas + t.paginasCopia) + '\n';
         }
         return 'SIGUIENTE;-1\n' + texto;
@@ -322,13 +340,24 @@ const CSV_JS = 'function bajarCsv(b){var s=b.getAttribute("data-s"),t="",n=0;b.d
     + 't+=x.slice(m[0].length);var sig=+m[1];if(sig<0)fin();else pedir(sig)}).catch(function(e){fin(e)})}'
     + 'pedir(0)}';
 
-function paginaNuevo(token, msg) {
+/** Campos de nombre completo y cédula, con lo que ya haya escrito (o se estaba escribiendo). */
+function camposDatos(v) {
+    return '<input name="nombreCompleto" placeholder="Nombre y apellidos" size="28" maxlength="'
+        + config.NOMBRE_COMPLETO_MAX + '" value="' + escapar((v && v.nombreCompleto) || '') + '"> '
+        + '<input name="cedula" placeholder="Cédula" size="12" maxlength="20" value="'
+        + escapar((v && v.cedula) || '') + '"> ';
+}
+
+/** `previo`: lo que se escribió, para no hacérselo repetir si algo no era válido. */
+function paginaNuevo(token, msg, previo) {
     return documento('Nuevo usuario', enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
         + '<div class="caja">' + formulario(token, 'alta',
-            '<input name="nombre" placeholder="usuario" maxlength="' + config.USUARIO_MAX + '" autocomplete="off"> '
-            + campoPin('PIN') + '<button>Dar de alta</button>')
+            '<p><input name="nombre" placeholder="usuario" maxlength="' + config.USUARIO_MAX + '" autocomplete="off" value="'
+            + escapar((previo && previo.nombre) || '') + '"> ' + campoPin('PIN') + '</p><p>' + camposDatos(previo)
+            + '</p><button>Dar de alta</button>')
         + '<p><small>Usuario: minúsculas, números y . _ - (el Nombre del driver). PIN: '
-        + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos (la Contraseña del driver).</small></p></div>');
+        + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos (la Contraseña del driver). '
+        + 'Nombre y cédula son para saber quién es.</small></p></div>');
 }
 
 function paginaUsuario(token, nombre, msg) {
@@ -338,10 +367,15 @@ function paginaUsuario(token, nombre, msg) {
     }
     const c = store.contadorDe(u.nombre);
     const inactivo = u.activo === false;
+    const campoNombre = '<input type="hidden" name="nombre" value="' + escapar(u.nombre) + '">';
     return documento('Usuario ' + u.nombre, enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
-        + '<div class="caja"><p>' + (inactivo ? 'Desactivado' : 'Activo') + ' · ' + c.impresiones
+        + '<div class="caja"><p><b>' + escapar(u.nombreCompleto || '(sin nombre completo)') + '</b>'
+        + (u.cedula ? ' · Cédula ' + escapar(u.cedula) : '') + '</p><p>'
+        + (inactivo ? 'Desactivado' : 'Activo') + ' · ' + c.impresiones
         + ' impresiones, ' + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág.</p>'
-        + formulario(token, 'cambiar', '<input type="hidden" name="nombre" value="' + escapar(u.nombre) + '">'
+        // Formularios separados: Enter en un campo pulsa el primer botón de SU formulario.
+        + formulario(token, 'cambiar', campoNombre + camposDatos(u) + '<button name="a" value="datos">Guardar datos</button>')
+        + formulario(token, 'cambiar', campoNombre
             + campoPin('PIN nuevo') + '<button name="a" value="pin">Cambiar PIN</button><p>'
             + '<button name="a" value="' + (inactivo ? 'activar">Activar' : 'desactivar">Desactivar') + '</button> '
             + '<button name="a" value="borrar" onclick="return confirm(\'¿Borrar?\')">Borrar</button></p>')
@@ -419,10 +453,10 @@ export function atenderRuta(p, ahora) {
     // Todo lo que cambia algo va por POST: un enlace o una recarga no deben dar de alta ni borrar.
     const cambia = p.metodo === 'POST';
     if (p.ruta === '/alta' && cambia) {
-        const r = store.agregarUsuario(d.nombre, d.pin);
+        const r = store.agregarUsuario(d.nombre, d.pin, { nombreCompleto: d.nombreCompleto, cedula: d.cedula });
         return r.ok
             ? html(paginaUsuarios(token, anotar({ ok: true, texto: 'Usuario ' + nombre + ' dado de alta.' })))
-            : html(paginaNuevo(token, anotar({ ok: false, texto: r.error })));
+            : html(paginaNuevo(token, anotar({ ok: false, texto: r.error }), d));
     }
     if (p.ruta === '/cambiar' && cambia) {
         const existe = store.usuarios().some((u) => u.nombre === nombre);
@@ -434,7 +468,10 @@ export function atenderRuta(p, ahora) {
             return html(paginaUsuarios(token, anotar({ ok: true, texto: nombre + ' borrado. Sus contadores se conservan.' })));
         }
         let msg;
-        if (d.a === 'pin') {
+        if (d.a === 'datos') {
+            const r = store.cambiarDatosUsuario(nombre, { nombreCompleto: d.nombreCompleto, cedula: d.cedula });
+            msg = r.ok ? { ok: true, texto: 'Datos guardados.' } : { ok: false, texto: r.error };
+        } else if (d.a === 'pin') {
             msg = store.pinValido(d.pin) && store.cambiarPinUsuario(nombre, d.pin)
                 ? { ok: true, texto: 'PIN cambiado. Cámbielo también en el driver de su PC.' }
                 : { ok: false, texto: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos.' };

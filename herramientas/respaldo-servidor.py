@@ -268,6 +268,11 @@ def recuperar_ultimo():
             return
 
 
+def limpio(texto):
+    """Sin ; ni saltos de linea ni comillas: romperian las columnas en Excel."""
+    return ' '.join(str(texto or '').replace(';', ' ').replace('"', ' ').split())
+
+
 def escribir_csv_contadores(datos):
     """
     Los contadores en un CSV que se abre con doble clic en Excel.
@@ -282,25 +287,38 @@ def escribir_csv_contadores(datos):
     contadores = datos.get('contadores') or {}
     if not isinstance(contadores, dict):
         return
+    usuarios = {u.get('nombre'): u for u in (datos.get('usuarios') or [])
+                if isinstance(u, dict) and u.get('nombre')}
+    # TODOS los usuarios, tambien quien no imprimio nada (que no imprima tambien es un
+    # dato), mas quien ya no existe pero tiene paginas contadas. Igual que la web.
     filas = []
-    for quien, c in contadores.items():
-        if not isinstance(c, dict):
-            continue
+    for quien in list(usuarios) + [q for q in contadores if q not in usuarios]:
+        c = contadores.get(quien) if isinstance(contadores.get(quien), dict) else {}
+        u = usuarios.get(quien)
+        if quien == '(sin sesion)':
+            nombre, estado = 'Sin identificar', ''
+        else:
+            nombre = quien
+            estado = 'borrado' if not u else ('desactivado' if u.get('activo') is False else 'activo')
+        completo = limpio((u or {}).get('nombreCompleto'))
+        cedula = limpio((u or {}).get('cedula'))
         impresiones = c.get('impresiones') or 0
         paginas = c.get('paginas') or 0
         copias = c.get('copias') or 0
         paginas_copia = c.get('paginasCopia') or 0
-        filas.append((quien, impresiones, paginas, copias, paginas_copia, paginas + paginas_copia))
-    filas.sort(key=lambda f: f[5], reverse=True)       # quien mas gasta, primero
+        filas.append((limpio(nombre), completo, cedula, estado,
+                      impresiones, paginas, copias, paginas_copia, paginas + paginas_copia))
+    filas.sort(key=lambda f: (-f[8], f[0]))       # quien mas gasta, primero
 
     destino = os.path.join(CARPETA_RESPALDOS, 'contadores.csv')
     with open(destino, 'w', encoding='utf-8-sig', newline='') as f:
         f.write('Actualizado;%s\n\n' % datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        f.write('Persona;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n')
+        f.write('Usuario;Nombre completo;Cedula;Estado;Impresiones;Paginas impresas;Copias;'
+                'Paginas copiadas;TOTAL paginas\n')
         for fila in filas:
-            f.write('%s;%d;%d;%d;%d;%d\n' % fila)
+            f.write('%s;%s;%s;%s;%d;%d;%d;%d;%d\n' % fila)
         if filas:
-            f.write('TOTAL;%d;%d;%d;%d;%d\n' % tuple(sum(f[i] for f in filas) for i in range(1, 6)))
+            f.write('TOTAL;;;;%d;%d;%d;%d;%d\n' % tuple(sum(f[i] for f in filas) for i in range(4, 9)))
     return destino
 
 

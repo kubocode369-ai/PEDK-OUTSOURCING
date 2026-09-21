@@ -46,7 +46,7 @@ function ns() {
 function vacio() {
     return {
         version: 1,
-        /** [{nombre, huella, activo, creado}] */
+        /** [{nombre, huella, activo, creado, cedula?, nombreCompleto?}] */
         usuarios: [],
         /** {nombre: {impresiones, paginas, copias, paginasCopia}} */
         contadores: {},
@@ -419,18 +419,24 @@ export function restaurarUsuarios(entrada) {
             malos++;
             continue;
         }
+        // Cédula y nombre completo viajan con el usuario; si el fichero no los trae, se
+        // conservan los que ya hubiera (un respaldo viejo no borra lo que se escribió después).
+        const extra = {};
+        if (u.cedula) extra.cedula = normalizarCedula(u.cedula);
+        if (u.nombreCompleto) extra.nombreCompleto = normalizarNombreCompleto(u.nombreCompleto).slice(0, config.NOMBRE_COMPLETO_MAX);
         const ya = d.usuarios.filter((x) => x.nombre === n)[0];
         if (ya) {
             ya.huella = huellaNueva;
             ya.activo = u.activo === false ? false : true;
+            Object.assign(ya, extra);
             actualizados++;
         } else {
-            d.usuarios.push({
+            d.usuarios.push(Object.assign({
                 nombre: n,
                 huella: huellaNueva,
                 activo: u.activo === false ? false : true,
                 creado: u.creado || new Date().toISOString(),
-            });
+            }, extra));
             creados++;
         }
         intentos.delete(n);
@@ -532,7 +538,44 @@ function buscar(nombre) {
     return cargar().usuarios.filter((u) => u.nombre === n)[0] || null;
 }
 
-export function agregarUsuario(nombre, pin) {
+/*
+ * Datos de la persona: para saber QUIÉN es cada usuario (el usuario es corto, como el
+ * Nombre del driver). Opcionales: el panel de la impresora da de alta sin ellos.
+ */
+
+/** Espacios de más fuera; nada que pueda romper el HTML o el CSV. */
+export function normalizarNombreCompleto(texto) {
+    return String(texto || '').replace(/[<>;"\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Sin espacios ni guiones sobrantes: "1712-345678" y "1712345678" son la misma cédula. */
+export function normalizarCedula(texto) {
+    return String(texto || '').replace(/[\s.-]/g, '').toUpperCase();
+}
+
+/**
+ * Valida y normaliza {cedula, nombreCompleto}. `yo` es el usuario que se está
+ * editando: su propia cédula no cuenta como repetida.
+ * @returns {{ok: boolean, error?: string, datos?: {cedula: string, nombreCompleto: string}}}
+ */
+function validarDatos(datos, yo) {
+    const nombreCompleto = normalizarNombreCompleto(datos && datos.nombreCompleto);
+    const cedula = normalizarCedula(datos && datos.cedula);
+    if (nombreCompleto.length > config.NOMBRE_COMPLETO_MAX) {
+        return { ok: false, error: 'Nombre completo de hasta ' + config.NOMBRE_COMPLETO_MAX + ' letras' };
+    }
+    if (cedula && !/^[0-9A-Z]{5,15}$/.test(cedula)) {
+        return { ok: false, error: 'Cédula no válida (5 a 15 números o letras)' };
+    }
+    const otro = cedula && cargar().usuarios.filter((u) => u.cedula === cedula && u.nombre !== yo)[0];
+    if (otro) {
+        return { ok: false, error: 'Esa cédula ya la tiene el usuario ' + otro.nombre };
+    }
+    return { ok: true, datos: { cedula, nombreCompleto } };
+}
+
+/** `datos` = {cedula, nombreCompleto}, opcionales. */
+export function agregarUsuario(nombre, pin, datos) {
     const n = normalizarUsuario(nombre);
     if (!usuarioValido(n)) {
         return { ok: false, error: 'Usuario no válido (a-z, 0-9, . _ -)' };
@@ -546,7 +589,27 @@ export function agregarUsuario(nombre, pin) {
     if (!pinValido(pin)) {
         return { ok: false, error: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos' };
     }
-    cargar().usuarios.push({ nombre: n, huella: huella(n, pin), activo: true, creado: new Date().toISOString() });
+    const v = validarDatos(datos, n);
+    if (!v.ok) {
+        return v;
+    }
+    cargar().usuarios.push(Object.assign({ nombre: n, huella: huella(n, pin), activo: true,
+        creado: new Date().toISOString() }, v.datos));
+    guardar();
+    return { ok: true };
+}
+
+/** Cambia cédula y nombre completo. Vacíos = se borran. */
+export function cambiarDatosUsuario(nombre, datos) {
+    const u = buscar(nombre);
+    if (!u) {
+        return { ok: false, error: 'No existe el usuario ' + normalizarUsuario(nombre) };
+    }
+    const v = validarDatos(datos, u.nombre);
+    if (!v.ok) {
+        return v;
+    }
+    Object.assign(u, v.datos);
     guardar();
     return { ok: true };
 }
@@ -678,6 +741,27 @@ export function contadores() {
     return Object.keys(c)
         .map((quien) => Object.assign({ quien }, c[quien]))
         .sort((a, b) => (b.paginas + b.paginasCopia) - (a.paginas + a.paginasCopia));
+}
+
+/**
+ * Contadores de TODOS: cada usuario aunque no haya impreso nada (para ver quién no
+ * imprime), más quien ya no existe pero tiene páginas contadas y lo impreso sin
+ * identificarse. Ordenado por páginas y, a igualdad, por usuario.
+ * [{quien, nombreCompleto, cedula, existe, activo, impresiones, paginas, copias, paginasCopia}]
+ */
+export function contadoresDeTodos() {
+    const d = cargar();
+    const cero = { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
+    const filas = d.usuarios.map((u) => Object.assign({ quien: u.nombre, nombreCompleto: u.nombreCompleto || '',
+        cedula: u.cedula || '', existe: true, activo: u.activo !== false }, cero, d.contadores[u.nombre]));
+    Object.keys(d.contadores).forEach((quien) => {
+        if (!d.usuarios.some((u) => u.nombre === quien)) {
+            filas.push(Object.assign({ quien, nombreCompleto: '', cedula: '', existe: false, activo: false },
+                cero, d.contadores[quien]));
+        }
+    });
+    const total = (r) => r.paginas + r.paginasCopia;
+    return filas.sort((a, b) => total(b) - total(a) || (a.quien < b.quien ? -1 : a.quien > b.quien ? 1 : 0));
 }
 
 export function contadorDe(quien) {

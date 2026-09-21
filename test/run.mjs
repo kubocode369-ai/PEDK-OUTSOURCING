@@ -979,12 +979,12 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     for (let n = 0; n < 100; n++) {
         const b = pedir('/contadores', 'GET', 's=' + s3 + '&p=' + n).body;
         mayorC = Math.max(mayorC, web.bytesUtf8(b));
-        const nuevos = (b.match(/<tr><td><b>[^<]+<\/b>/g) || []).filter((x) => !cont.includes(x));
+        const nuevos = (b.match(/<tr[^>]*><td><b>[^<]+<\/b>/g) || []).filter((x) => !cont.includes(x));
         if (!nuevos.length) break;
         cont.push(...nuevos);
     }
     check('contadores: ninguna página pasa del tope', mayorC <= config.WEB_MAX_BYTES, mayorC);
-    check('contadores: paginando salen todos', cont.length === store.contadores().length, cont.length + ' de ' + store.contadores().length);
+    check('contadores: paginando salen todos', cont.length === store.contadoresDeTodos().length, cont.length + ' de ' + store.contadoresDeTodos().length);
     check('quien no se identificó sale como "Sin identificar"', cont.some((x) => /Sin identificar/.test(x)));
 
     // El CSV lo junta el navegador: se ejecuta el script de verdad con fetch simulado.
@@ -1011,11 +1011,11 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     const lineas = csv ? csv.split('\n').filter(Boolean) : [];
     check('el CSV se descarga en varias partes y cada una cabe', partes > 1 && mayorP <= config.WEB_MAX_BYTES, partes + ' partes, ' + mayorP + ' bytes');
     check('el CSV lleva BOM, cabecera, a todos y el TOTAL',
-        !!csv && csv.charCodeAt(0) === 0xfeff && lineas.some((l) => /^Persona;Impresiones/.test(l))
-        && lineas.length - lineas.findIndex((l) => /^Persona;/.test(l)) - 2 === store.contadores().length
+        !!csv && csv.charCodeAt(0) === 0xfeff && lineas.some((l) => /^Usuario;Nombre completo;Cedula;Estado;Impresiones/.test(l))
+        && lineas.length - lineas.findIndex((l) => /^Usuario;/.test(l)) - 2 === store.contadoresDeTodos().length
         && /^TOTAL;/.test(lineas[lineas.length - 1]), bajado && (bajado.error || lineas.length));
     const tot = store.totales();
-    check('el TOTAL del CSV cuadra', lineas.length && lineas[lineas.length - 1] === 'TOTAL;' + tot.impresiones + ';'
+    check('el TOTAL del CSV cuadra', lineas.length && lineas[lineas.length - 1] === 'TOTAL;;;;' + tot.impresiones + ';'
         + tot.paginas + ';' + tot.copias + ';' + tot.paginasCopia + ';' + (tot.paginas + tot.paginasCopia), lineas[lineas.length - 1]);
     check('el CSV pide sesión', !/^SIGUIENTE/.test(pedir('/csv', 'GET', 'desde=0').body));
 
@@ -1023,6 +1023,60 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('poner a cero por GET no hace nada', store.contadores().length > 0);
     resp = pedir('/cero', 'POST', 's=' + s3);
     check('poner a cero por POST', /Contadores a cero/.test(resp.body) && store.contadores().length === 0);
+
+    // Nombre completo y cédula.
+    store.usuarios().forEach((u) => store.quitarUsuario(u.nombre));
+    store.reiniciarContadores();
+    const enc = encodeURIComponent;
+    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=jperez&pin=1234&nombreCompleto=' + enc('  José   Pérez Núñez ')
+        + '&cedula=' + enc('1712-345.678'));
+    const jp = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
+    check('alta con nombre completo y cédula (acentos y espacios de más)',
+        jp && jp.nombreCompleto === 'José Pérez Núñez' && jp.cedula === '1712345678', JSON.stringify(jp));
+    check('la lista enseña el nombre completo', /José Pérez Núñez/.test(resp.body));
+    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=otro&pin=1234&nombreCompleto=Otra+Persona&cedula=1712345678');
+    check('no deja repetir una cédula', /ya la tiene el usuario jperez/.test(resp.body) && !store.usuarios().some((u) => u.nombre === 'otro'));
+    check('y no hace volver a escribirlo todo', /value="Otra Persona"/.test(resp.body) && /value="otro"/.test(resp.body));
+    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=otro&pin=1234&cedula=12');
+    check('rechaza una cédula demasiado corta', /Cédula no válida/.test(resp.body));
+    check('nombre y cédula son opcionales', pedir('/alta', 'POST', 's=' + s3 + '&nombre=anon&pin=1234') && store.usuarios().some((u) => u.nombre === 'anon'));
+    check('el nombre no puede meter HTML', !/<x>/.test(pedir('/usuario', 'GET', 's=' + s3 + '&n=anon').body)
+        && store.cambiarDatosUsuario('anon', { nombreCompleto: 'a<x>b' }).ok && !/<x>/.test(pedir('/usuario', 'GET', 's=' + s3 + '&n=anon').body));
+
+    resp = pedir('/cambiar', 'POST', 's=' + s3 + '&nombre=jperez&a=datos&nombreCompleto=' + enc('José Pérez') + '&cedula=');
+    const jp2 = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
+    check('la ficha guarda los datos (y vaciar la cédula la quita)', /Datos guardados/.test(resp.body)
+        && jp2.nombreCompleto === 'José Pérez' && jp2.cedula === '', JSON.stringify(jp2));
+    check('su propia cédula no cuenta como repetida', store.cambiarDatosUsuario('jperez', { cedula: '99999', nombreCompleto: 'José Pérez' }).ok
+        && store.cambiarDatosUsuario('jperez', { cedula: '99999', nombreCompleto: 'J P' }).ok);
+    check('la ficha cabe con un nombre largo con acentos', (() => {
+        store.cambiarDatosUsuario('jperez', { nombreCompleto: 'Ñ'.repeat(config.NOMBRE_COMPLETO_MAX) });
+        return web.bytesUtf8(pedir('/usuario', 'GET', 's=' + s3 + '&n=jperez').body) <= config.WEB_MAX_BYTES;
+    })());
+    check('más largo que el máximo no se guarda', !store.cambiarDatosUsuario('jperez', { nombreCompleto: 'a'.repeat(config.NOMBRE_COMPLETO_MAX + 1) }).ok);
+    store.cambiarDatosUsuario('jperez', { nombreCompleto: 'José Pérez', cedula: '99999' });
+
+    // Los contadores enseñan a todos, también a quien no imprimió.
+    store.contar('jperez', { tipo: 'PRINT', paginas: 3 });
+    store.contar('fantasma', { tipo: 'PRINT', paginas: 2 });
+    const todos = store.contadoresDeTodos();
+    check('contadores de todos: los que no imprimieron salen con cero',
+        todos.some((c) => c.quien === 'anon' && c.paginas === 0) && todos[0].quien === 'jperez', JSON.stringify(todos.map((c) => c.quien)));
+    check('y quien ya no existe pero imprimió sale como borrado', todos.some((c) => c.quien === 'fantasma' && !c.existe));
+    const pc = pedir('/contadores', 'GET', 's=' + s3).body;
+    check('la página de contadores enseña al que tiene cero, en gris', /class="inactivo"><td><b>anon/.test(pc) && /usuario borrado/.test(pc));
+    const p0 = pedir('/csv', 'GET', 's=' + s3 + '&desde=0').body;
+    check('el CSV lleva nombre completo, cédula y estado', /\njperez;José Pérez;99999;activo;1;3;0;0;3\n/.test(p0)
+        && /\nanon;a x b;;activo;0;0;0;0;0\n/.test(p0) && /\nfantasma;;;borrado;1;2/.test(p0), p0);
+
+    // Viajan en el respaldo y vuelven al restaurar.
+    const copia = JSON.parse(JSON.stringify(store.respaldo()));
+    store.quitarUsuario('jperez');
+    store.restaurarUsuarios(copia);
+    const vuelto = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
+    check('nombre y cédula sobreviven a respaldar y restaurar', vuelto && vuelto.nombreCompleto === 'José Pérez' && vuelto.cedula === '99999');
+    store.restaurarUsuarios([{ nombre: 'jperez', pin: '1234' }]);
+    check('un fichero sin esos datos no los borra', store.usuarios().filter((u) => u.nombre === 'jperez')[0].cedula === '99999');
 
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
