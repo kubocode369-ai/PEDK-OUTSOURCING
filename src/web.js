@@ -127,10 +127,12 @@ export function leerPeticion(req) {
 function nuevoToken(ahora) {
     semilla++;
     let t = '';
-    while (t.length < 24) {
+    // 16 caracteres hex = 64 bits: imposible de adivinar en los 15 min que dura, y cada
+    // byte cuenta porque el token va en todos los enlaces (ver el tope de respuesta).
+    while (t.length < 16) {
         t += Math.floor(Math.random() * 0x100000000).toString(16);
     }
-    t = (((ahora ^ semilla) >>> 0).toString(16) + t).slice(0, 24);
+    t = (((ahora ^ semilla) >>> 0).toString(16).slice(-4) + t).slice(0, 16);
     sesiones.set(t, ahora + config.WEB_SESION_MS);
     return t;
 }
@@ -165,7 +167,7 @@ const ESTILO = 'body{font-family:system-ui,sans-serif;margin:0;background:#f4f5f
     + '.caja{background:#fff;border:1px solid #ddd;border-radius:6px;padding:10px 14px;margin-bottom:12px}'
     + 'table{border-collapse:collapse;width:100%}td{border-bottom:1px solid #e3e3e3;padding:6px}'
     + 'input{padding:5px;font-size:14px;margin:2px 0}button{padding:5px 10px;font-size:14px;cursor:pointer;margin:2px 0}'
-    + '.ok{color:#1b7a2f}.error{color:#b3261e}.aviso{background:#fff4d6}.inactivo{color:#999}';
+    + 'td button{margin-right:4px}.ok{color:#1b7a2f}.error{color:#b3261e}.aviso{background:#fff4d6}.inactivo{color:#999}';
 
 /** Bytes que ocupa el texto en UTF-8: el tope es de bytes, no de caracteres. */
 export function bytesUtf8(s) {
@@ -197,8 +199,11 @@ function enlace(token, ruta, extra, texto) {
 }
 
 /** Formulario POST con el token. Los botones van en `campos`. */
-function formulario(token, accion, campos) {
-    return '<form method="post" action="' + accion + '"><input type="hidden" name="s" value="' + token + '">'
+/** Un solo aviso para todos los "Borrar" de la lista: uno por fila no cabría. */
+const BORRAR_CONFIRMA = ' onsubmit="var v=event.submitter.value;return v[0]!=\'b\'||confirm(\'¿Borrar a \'+v.slice(2)+\'?\')"';
+
+function formulario(token, accion, campos, extra) {
+    return '<form method="post" action="' + accion + '"' + (extra || '') + '><input type="hidden" name="s" value="' + token + '">'
         + campos + '</form>';
 }
 
@@ -219,11 +224,11 @@ function paginaLogin(msg) {
  * página sale igual la pida quien la pida.
  */
 function paginarFilas(token, ruta, filas, pagina, armar) {
-    const reserva = 200;   // lo que ocupan "« Anterior · Página x de y · Siguiente »"
+    const reserva = 150;   // lo que ocupan "« Anterior · Página x de y · Siguiente »"
     const cortes = [0];
     let acumulado = '';
     for (let i = 0; i < filas.length; i++) {
-        if (acumulado && bytesUtf8(armar(acumulado + filas[i], '')) + reserva > config.WEB_MAX_BYTES) {
+        if (acumulado && bytesUtf8(armar(acumulado + filas[i], '', cortes.length - 1)) + reserva > config.WEB_MAX_BYTES) {
             cortes.push(i);
             acumulado = '';
         }
@@ -238,29 +243,62 @@ function paginarFilas(token, ruta, filas, pagina, armar) {
             + 'Página ' + (n + 1) + ' de ' + total
             + (n + 1 < total ? ' · ' + enlace(token, ruta, '&p=' + (n + 1), 'Siguiente »') : '') + '</p>';
     }
-    return armar(filas.slice(cortes[n], hasta).join(''), pie);
+    return armar(filas.slice(cortes[n], hasta).join(''), pie, n);
 }
 
 /** Lista compacta de usuarios. */
-function paginaUsuarios(token, msg, pagina) {
-    const lista = store.usuarios();
+/*
+ * LISTA DE USUARIOS pintada por el navegador. Con el tope de ~2 KB por respuesta, una
+ * tabla con botones hecha en la impresora sólo dejaba 3 personas por página. Ahora la
+ * impresora manda la página casi vacía y los datos en líneas cortas ("nombre, activo,
+ * nombre completo", ~25 bytes por persona, por partes si no caben), y el script dibuja
+ * a TODOS en una sola página. Los botones siguen siendo un formulario normal (POST a
+ * /lista, x="d ana"), así que la acción la decide y la valida la impresora.
+ */
+function paginaUsuarios(token, msg) {
+    const n = store.usuarios().length;
     const cab = '<span>' + enlace(token, 'contadores', '', 'Contadores') + ' · '
         + enlace(token, 'ajustes', '', 'Ajustes') + ' · '
         + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
     const aviso = store.pinAdminDeFabrica()
-        ? '<p class="caja aviso">El PIN de administrador es el de fábrica: cámbielo en el panel.</p>' : '';
-    const filas = lista.map((u) => {
-        const c = store.contadorDe(u.nombre);
-        return '<tr' + (u.activo === false ? ' class="inactivo"' : '') + '><td>'
-            + enlace(token, 'usuario', '&n=' + encodeURIComponent(u.nombre), '<b>' + escapar(u.nombre) + '</b>')
-            + (u.nombreCompleto ? '<br><small>' + escapar(u.nombreCompleto) + '</small>' : '')
-            + '</td><td>' + (u.activo === false ? 'desactivado' : 'activo') + '</td><td>'
-            + (c.paginas + c.paginasCopia) + ' pág.</td></tr>';
-    });
-    return paginarFilas(token, 'usuarios', filas, pagina, (f, pie) => documento('Usuarios (' + lista.length + ')', cab,
-        aviso + mensajeHtml(msg) + '<div class="caja">' + (lista.length ? '<table>' + f + '</table>' : 'No hay usuarios.')
-        + pie + '</div>'));
+        ? '<p class="caja aviso">PIN de administrador de fábrica: cámbielo en Ajustes.</p>' : '';
+    return documento('Usuarios (' + n + ')', cab, aviso + mensajeHtml(msg) + '<div class="caja">'
+        + formulario(token, 'lista', '<table id="t" data-s="' + token + '"></table>', BORRAR_CONFIRMA)
+        + '</div><script src="lista.js"></script>');
 }
+
+/** Datos de la lista, por partes: "SIGUIENTE;<n o -1>" y una línea por persona. */
+export function parteUsuarios(desde) {
+    const lista = store.usuarios();
+    const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
+    let texto = '';
+    let i = i0;
+    for (; i < lista.length; i++) {
+        const u = lista[i];
+        const linea = u.nombre + '\t' + (u.activo === false ? '0' : '1') + '\t'
+            + String(u.nombreCompleto || '').replace(/[\t\r\n]/g, ' ') + '\n';
+        if (i > i0 && bytesUtf8(texto + linea) + 40 > config.WEB_MAX_BYTES) {
+            break;
+        }
+        texto += linea;
+    }
+    return 'SIGUIENTE;' + (i >= lista.length ? -1 : i) + '\n' + texto;
+}
+
+/* Todo con textContent: nada de lo que llega se interpreta como HTML. */
+const LISTA_JS = '(function(){var T=document.getElementById("t"),s=T.getAttribute("data-s"),L=[];'
+    + 'function e(t,x,c){var n=document.createElement(t);if(x)n.textContent=x;if(c)n.className=c;return n}'
+    + 'function b(v,x){var n=e("button",x);n.name="x";n.value=v;return n}'
+    + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios."));'
+    + 'L.forEach(function(l){var f=l.split("\\t"),a=f[1]=="1",r=e("tr",0,a?"":"inactivo"),d=e("td");'
+    + 'd.appendChild(e("b",f[0]));if(f[2]){d.appendChild(e("br"));d.appendChild(e("small",f[2]))}r.appendChild(d);'
+    + 'r.appendChild(e("td",a?"activo":"desactivado"));d=e("td");d.appendChild(b("e "+f[0],"Editar"));'
+    + 'd.appendChild(b((a?"d ":"a ")+f[0],a?"Desactivar":"Activar"));d.appendChild(b("b "+f[0],"Borrar"));'
+    + 'r.appendChild(d);T.appendChild(r)})}'
+    + 'function p(n){fetch("usuarios.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
+    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
+    + 'x.slice(m[0].length).split("\\n").forEach(function(l){if(l)L.push(l)});if(+m[1]>=0)p(+m[1]);else pinta()})}'
+    + 'p(0)})()';
 
 /** Cómo se llama en pantalla y en el CSV a quien no se identificó. */
 function persona(quien) {
@@ -687,6 +725,9 @@ export function atenderRuta(p, ahora) {
         return { codigo: 200, tipo: 'text/javascript; charset=utf-8',
             cuerpo: p.ruta === '/copia-bajar.js' ? COPIA_BAJAR_JS : COPIA_SUBIR_JS };
     }
+    if (p.ruta === '/lista.js') {
+        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: LISTA_JS };
+    }
     if (p.ruta === '/csv.js') {
         return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CSV_JS };
     }
@@ -738,6 +779,9 @@ export function atenderRuta(p, ahora) {
     if (p.ruta === '/csv') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteCsv(d.desde) };
     }
+    if (p.ruta === '/usuarios.txt') {
+        return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteUsuarios(d.desde) };
+    }
     if (p.ruta === '/copia') {
         return html(paginaCopia(token));
     }
@@ -767,6 +811,27 @@ export function atenderRuta(p, ahora) {
         return r.ok
             ? html(paginaUsuarios(token, anotar({ ok: true, texto: 'Usuario ' + nombre + ' dado de alta.' })))
             : html(paginaNuevo(token, anotar({ ok: false, texto: r.error }), d));
+    }
+    if (p.ruta === '/lista' && cambia) {
+        const x = String(d.x || '');
+        const quien = store.normalizarUsuario(x.slice(2));
+        const existe = store.usuarios().some((u) => u.nombre === quien);
+        let msg;
+        if (!existe) {
+            msg = { ok: false, texto: 'No existe el usuario ' + quien + '.' };
+        } else if (x.charAt(0) === 'e') {
+            return html(paginaUsuario(token, quien));
+        } else if (x.charAt(0) === 'b') {
+            store.quitarUsuario(quien);
+            msg = { ok: true, texto: quien + ' borrado. Sus contadores se conservan.' };
+        } else if (x.charAt(0) === 'a' || x.charAt(0) === 'd') {
+            store.activarUsuario(quien, x.charAt(0) === 'a');
+            msg = { ok: true, texto: quien + (x.charAt(0) === 'a' ? ' activado.' : ' desactivado: ya no puede imprimir.') };
+        } else {
+            msg = { ok: false, texto: 'Acción desconocida.' };
+        }
+        console.log('[web] /lista ' + x.slice(0, 30) + ': ' + msg.texto);
+        return html(paginaUsuarios(token, msg));
     }
     if (p.ruta === '/cambiar' && cambia) {
         const existe = store.usuarios().some((u) => u.nombre === nombre);
@@ -830,7 +895,7 @@ export function atenderRuta(p, ahora) {
         return html(paginaContadores(token, anotar({ ok: true, texto: 'Contadores a cero (había '
             + (t.paginas + t.paginasCopia) + ' páginas).' })));
     }
-    return html(paginaUsuarios(token, null, d.p));
+    return html(paginaUsuarios(token, null));
 }
 
 const DEMASIADO = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'

@@ -880,6 +880,37 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     const pedir = (ruta, metodo, cuerpo) => mock.pedk.net.http.receiveData(
         { url: BASE + ruta, method: metodo || 'GET', body: cuerpo || '' });
     const token = (html) => (/(?:name="s" value="|[?]s=)([0-9a-f]+)/.exec(html) || [])[1];
+    // La lista la pinta el navegador: se ejecuta lista.js con un DOM mínimo y se leen las filas.
+    let listaJs = null;   // se lee una vez: una prueba baja el tope y el script ya no cabría
+    const verLista = async (tok) => {
+        const el = (tag) => ({ tag, children: [], textContent: '', className: '', attrs: {},
+            appendChild(c) { this.children.push(c); return c; }, getAttribute(k) { return this.attrs[k]; } });
+        const T = el('table');
+        T.attrs['data-s'] = tok;
+        let partes = 0;
+        let mayor = 0;
+        const ctx = {
+            document: { getElementById: () => T, createElement: el },
+            fetch: (url) => {
+                partes++;
+                const [ruta, q] = url.split('?');
+                const b = pedir('/' + ruta, 'GET', q).body;
+                mayor = Math.max(mayor, web.bytesUtf8(b));
+                return Promise.resolve({ text: () => Promise.resolve(b) });
+            },
+        };
+        listaJs = listaJs || pedir('/lista.js').body;
+        new Function(...Object.keys(ctx), listaJs)(...Object.values(ctx));
+        await esperar(30);
+        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 3).map((r) => ({
+            nombre: r.children[0].children[0].textContent,
+            completo: (r.children[0].children[2] || {}).textContent || '',
+            estado: r.children[1].textContent,
+            botones: r.children[2].children.map((b) => b.value + '=' + b.textContent),
+            clase: r.className,
+        }));
+        return { filas, partes, mayor, texto: T.textContent };
+    };
     hablar();
     check('se engancha a receiveData', r.ok, r.motivo);
 
@@ -902,7 +933,8 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
 
     resp = pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA);
     const s = token(resp.body);
-    check('el PIN de administrador abre la sesión y lista usuarios', !!s && /<b>ana<\/b>/.test(resp.body));
+    check('el PIN de administrador abre la sesión y lista usuarios', !!s && /Usuarios \(1\)/.test(resp.body)
+        && (await verLista(s)).filas.some((f) => f.nombre === 'ana'));
     check('avisa de que el PIN de admin es el de fábrica', /de fábrica/.test(resp.body));
     check('nunca muestra PIN ni huellas', !/4321/.test(resp.body) && !resp.body.includes(store.huella('ana', '4321')));
 
@@ -928,6 +960,30 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     resp = pedir('/cambiar', 'POST', 's=' + s + '&nombre=beto&a=borrar');
     check('borra', /beto borrado/.test(resp.body) && !store.usuarios().some((u) => u.nombre === 'beto'));
 
+    // Acciones visibles en cada fila de la lista.
+    store.agregarUsuario('lola', '1357', { nombreCompleto: 'Lola Martínez' });
+    let lola = (await verLista(s)).filas.filter((f) => f.nombre === 'lola')[0];
+    check('cada fila tiene Editar, Desactivar y Borrar a la vista', lola && lola.completo === 'Lola Martínez'
+        && lola.botones.join('|') === 'e lola=Editar|d lola=Desactivar|b lola=Borrar', JSON.stringify(lola));
+    resp = pedir('/lista', 'POST', 's=' + s + '&x=d+lola');
+    lola = (await verLista(s)).filas.filter((f) => f.nombre === 'lola')[0];
+    check('desactivar desde la lista', !store.validarUsuario('lola', '1357').ok && /lola desactivado/.test(resp.body)
+        && lola.estado === 'desactivado' && lola.clase === 'inactivo' && lola.botones[1] === 'a lola=Activar');
+    check('Editar abre la ficha', /Cambiar PIN/.test(pedir('/lista', 'POST', 's=' + s + '&x=e+lola').body));
+    pedir('/lista', 'POST', 's=' + s + '&x=a+lola');
+    check('activar desde la lista', store.validarUsuario('lola', '1357').ok);
+    pedir('/lista', 'GET', 's=' + s + '&x=b+lola');
+    check('por GET la lista no borra', store.usuarios().some((u) => u.nombre === 'lola'));
+    resp = pedir('/lista', 'POST', 's=' + s + '&x=b+lola');
+    check('borrar desde la lista', !store.usuarios().some((u) => u.nombre === 'lola') && /lola borrado/.test(resp.body));
+    check('sobre alguien que no existe lo dice', /No existe/.test(pedir('/lista', 'POST', 's=' + s + '&x=d+nadie').body));
+    check('sin sesión la lista no hace nada', (() => {
+        store.agregarUsuario('lola', '1357');
+        pedir('/lista', 'POST', 'x=b+lola');
+        return store.usuarios().some((u) => u.nombre === 'lola');
+    })());
+    store.quitarUsuario('lola');
+
     resp = pedir('/alta', 'POST', 's=' + s + '&nombre=' + encodeURIComponent('<script>') + '&pin=1234');
     check('escapa lo que pinta', !/<script>/.test(resp.body), resp.body.slice(0, 200));
 
@@ -948,20 +1004,18 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     // El firmware se cuelga con respuestas grandes: con mucha gente, nada puede pasar del tope.
     const s3 = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
     for (let i = 0; i < 60; i++) store.agregarUsuario('persona.larga.' + String(i).padStart(3, '0'), '1234');
-    const vistos = new Set();
-    let paginas = 0;
-    let mayor = 0;
-    for (let n = 0; n < 100; n++) {
-        const b = pedir('/usuarios', 'GET', 's=' + s3 + '&p=' + n).body;
-        mayor = Math.max(mayor, web.bytesUtf8(b));
-        const antes = vistos.size;
-        (b.match(/<b>[^<]+<\/b>/g) || []).forEach((x) => vistos.add(x));
-        if (vistos.size === antes) break;
-        paginas++;
-    }
-    check('con 60 usuarios ninguna página pasa del tope', mayor <= config.WEB_MAX_BYTES, mayor + ' bytes');
-    check('y paginando se ven todos', vistos.size === store.usuarios().length && paginas > 1,
-        vistos.size + ' de ' + store.usuarios().length + ' en ' + paginas + ' pág.');
+    const vista = await verLista(s3);
+    check('con 60 usuarios la página y los datos caben en el tope', vista.mayor <= config.WEB_MAX_BYTES
+        && web.bytesUtf8(pedir('/usuarios', 'GET', 's=' + s3).body) <= config.WEB_MAX_BYTES, vista.mayor);
+    check('y salen TODOS en una sola página', vista.filas.length === store.usuarios().length,
+        vista.filas.length + ' de ' + store.usuarios().length);
+    const topeReal = config.WEB_MAX_BYTES;
+    config.WEB_MAX_BYTES = 400;
+    const troceada = await verLista(s3);
+    config.WEB_MAX_BYTES = topeReal;
+    check('si los datos no caben de una vez, se piden por partes y no se pierde nadie',
+        troceada.partes > 3 && troceada.filas.length === store.usuarios().length, troceada.partes + ' partes, ' + troceada.filas.length);
+    check('sin sesión la lista no enseña a nadie', /caducó/.test((await verLista('inventado')).texto));
     const ficha = pedir('/usuario', 'GET', 's=' + s3 + '&n=persona.larga.007').body;
     check('la ficha de un usuario trae sus acciones y cabe',
         /Cambiar PIN/.test(ficha) && /Desactivar/.test(ficha) && /Borrar/.test(ficha)
@@ -1036,7 +1090,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     const jp = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
     check('alta con nombre completo y cédula (acentos y espacios de más)',
         jp && jp.nombreCompleto === 'José Pérez Núñez' && jp.cedula === '1712345678', JSON.stringify(jp));
-    check('la lista enseña el nombre completo', /José Pérez Núñez/.test(resp.body));
+    check('la lista enseña el nombre completo', (await verLista(s3)).filas.some((f) => f.nombre === 'jperez' && f.completo === 'José Pérez Núñez'));
     resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=otro&pin=1234&nombreCompleto=Otra+Persona&cedula=1712345678');
     check('no deja repetir una cédula', /ya la tiene el usuario jperez/.test(resp.body) && !store.usuarios().some((u) => u.nombre === 'otro'));
     check('y no hace volver a escribirlo todo', /value="Otra Persona"/.test(resp.body) && /value="otro"/.test(resp.body));
