@@ -21,6 +21,8 @@ import * as acciones from './acciones.js';
 import * as cerradura from './cerradura.js';
 import * as respaldo from './respaldo.js';
 import * as capacidad from './capacidad.js';
+import { inflar } from './inflate.js';
+import { PLANTILLA_XLSX_B64 } from './plantilla.js';
 
 const BASE = '/pedk/app_notify/' + config.WEB_APP;
 /** Clave del freno de intentos: compartida con nadie, sólo la web. */
@@ -260,12 +262,22 @@ function paginaUsuarios(token, msg) {
     const n = store.usuarios().length;
     const cab = '<span>' + enlace(token, 'contadores', '', 'Contadores') + ' · '
         + enlace(token, 'ajustes', '', 'Ajustes') + ' · '
-        + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
-    const aviso = store.pinAdminDeFabrica()
-        ? '<p class="caja aviso">PIN de administrador de fábrica: cámbielo en Ajustes.</p>' : '';
+        + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'importar', '', 'Importar Excel') + ' · '
+        + enlace(token, 'salir', '', 'Salir') + '</span>';
+    const aviso = (store.pinAdminDeFabrica()
+        ? '<p class="caja aviso">PIN de administrador de fábrica: cámbielo en Ajustes.</p>' : '')
+        + (n >= config.USUARIOS_AVISO ? '<p class="caja aviso">' + avisoCapacidad(n) + '</p>' : '');
     return documento('Usuarios (' + n + ')', cab, aviso + mensajeHtml(msg) + '<div class="caja">'
         + formulario(token, 'lista', '<table id="t" data-s="' + token + '"></table>', BORRAR_CONFIRMA)
         + '</div><script src="lista.js"></script>');
+}
+
+/** Lo que se le dice al administrador cuando hay muchos usuarios (ver config.USUARIOS_*). */
+function avisoCapacidad(n) {
+    return n >= config.USUARIOS_MAX
+        ? 'Máximo de ' + config.USUARIOS_MAX + ' usuarios alcanzado: borre alguno para crear otro.'
+        : n + ' usuarios: con más de ' + config.USUARIOS_AVISO + ' la impresora tarda más en guardar '
+            + 'cada trabajo (máximo ' + config.USUARIOS_MAX + ').';
 }
 
 /** Datos de la lista, por partes: "SIGUIENTE;<n o -1>" y una línea por persona. */
@@ -399,6 +411,10 @@ function camposDatos(v) {
 
 /** `previo`: lo que se escribió, para no hacérselo repetir si algo no era válido. */
 function paginaNuevo(token, msg, previo) {
+    const n = store.usuarios().length;
+    if (n >= config.USUARIOS_MAX && !msg) {
+        msg = { ok: false, texto: avisoCapacidad(n) };
+    }
     return documento('Nuevo usuario', enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
         + '<div class="caja">' + formulario(token, 'alta',
             '<p><input name="nombre" placeholder="usuario" maxlength="' + config.USUARIO_MAX + '" autocomplete="off" value="'
@@ -565,8 +581,19 @@ export function parteCopia(token, desde) {
     if (i0 === 0 || !descargas.has(token)) {
         descargas.set(token, JSON.stringify(store.respaldo()));
     }
-    const texto = descargas.get(token);
-    // Se corta por caracteres, contando bytes: un acento no puede quedar partido.
+    const r = parteTexto(descargas.get(token), i0);
+    if (/^SIGUIENTE;-1/.test(r)) {
+        descargas.delete(token);
+    }
+    return r;
+}
+
+/**
+ * Un trozo de un texto largo que no cabe en una respuesta: "SIGUIENTE;<n o -1>\n" y el
+ * trozo. Se corta por caracteres contando bytes: un acento no puede quedar partido.
+ */
+export function parteTexto(texto, desde) {
+    const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
     let i = i0;
     let bytes = 0;
     const max = config.WEB_MAX_BYTES - 40;
@@ -576,17 +603,29 @@ export function parteCopia(token, desde) {
         bytes += b;
         i++;
     }
-    if (i >= texto.length) {
-        descargas.delete(token);
-        return 'SIGUIENTE;-1\n' + texto.slice(i0);
-    }
-    return 'SIGUIENTE;' + i + '\n' + texto.slice(i0, i);
+    return 'SIGUIENTE;' + (i >= texto.length ? -1 : i) + '\n' + texto.slice(i0, i);
+}
+
+/*
+ * CARGADOR DE SCRIPTS por partes: los scripts grandes (leer un Excel, revisar la
+ * importación) no caben en una respuesta. La página trae este cargador en línea, que
+ * pide cada script con /js?n=<nombre>&desde=..., los junta y los ejecuta de una vez.
+ */
+function cargador(nombres) {
+    return '<script>(function(N){var t="";function p(k,d){fetch("js?n="+N[k]+"&desde="+d).then(function(r){return r.text()})'
+        + '.then(function(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);t+=x.slice(m[0].length);if(+m[1]>=0)return p(k,+m[1]);'
+        + 't+="\\n";if(k+1<N.length)return p(k+1,0);var s=document.createElement("script");s.text=t;document.head.appendChild(s)})}'
+        + 'p(0,0)})(' + JSON.stringify(nombres) + ')</script>';
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /** base64url -> texto UTF-8. Este motor no trae atob ni TextDecoder. */
 export function desdeBase64url(t) {
+    return textoUtf8(bytesDeBase64url(t));
+}
+
+export function bytesDeBase64url(t) {
     const bytes = [];
     let acc = 0;
     let bits = 0;
@@ -600,6 +639,12 @@ export function desdeBase64url(t) {
             bytes.push((acc >> bits) & 0xff);
         }
     }
+    return bytes;
+}
+
+/** Bytes UTF-8 -> texto. Tampoco hay TextDecoder en este motor. */
+export function textoUtf8(bytes) {
+    const trozos = [];
     let s = '';
     for (let i = 0; i < bytes.length;) {
         const c = bytes[i];
@@ -614,8 +659,13 @@ export function desdeBase64url(t) {
         s += cp > 0xffff
             ? String.fromCharCode(0xd800 + ((cp - 0x10000) >> 10), 0xdc00 + ((cp - 0x10000) & 0x3ff))
             : String.fromCharCode(cp);
+        if (s.length > 4096) {
+            trozos.push(s);
+            s = '';
+        }
     }
-    return s;
+    trozos.push(s);
+    return trozos.join('');
 }
 
 /** Aplica una copia completa: datos con store, modo y bloqueo con acciones (como el panel). */
@@ -627,13 +677,39 @@ function aplicarCopia(copia) {
     const partes = [];
     const u = r.usuarios;
     partes.push(u.creados + ' usuario(s) nuevos, ' + u.actualizados + ' actualizados'
-        + (u.malos ? ', ' + u.malos + ' no válidos' : ''));
+        + (u.malos ? ', ' + u.malos + ' no válidos' : '')
+        + (u.sinSitio ? ', ' + u.sinSitio + ' sin crear por el máximo de ' + config.USUARIOS_MAX : ''));
     partes.push(r.contadores ? 'contadores restaurados' : 'contadores: se conservan los actuales');
     const m = acciones.fijarModo(r.aplicar.modo);
     if (!m.ok) partes.push('modo: ' + m.texto);
     const b = acciones.fijarBloqueo(r.aplicar.bloqueoActivo);
     if (!b.ok) partes.push('bloqueo: ' + b.texto);
     return { ok: m.ok && b.ok, texto: 'Copia restaurada: ' + partes.join('; ') + '.' };
+}
+
+/**
+ * Aplica una importación ya revisada en el navegador: {filas: [[fila, usuario, pin,
+ * nombreCompleto, cédula], ...]}. La impresora vuelve a validar cada fila con las
+ * mismas reglas que el alta manual: la revisión del navegador es para el usuario, no
+ * una garantía.
+ */
+function aplicarImportacion(datos) {
+    if (!datos || !Array.isArray(datos.filas)) {
+        return { ok: false, texto: 'El fichero no trae usuarios.' };
+    }
+    const filas = datos.filas.filter(Array.isArray).map((a) => ({
+        fila: a[0], usuario: String(a[1] || ''), pin: String(a[2] === undefined ? '' : a[2]),
+        nombreCompleto: String(a[3] || ''), cedula: String(a[4] || ''),
+    }));
+    const r = store.importarUsuarios(filas);
+    const partes = [r.creados + ' usuario(s) creados'];
+    if (r.existentes.length) partes.push(r.existentes.length + ' ya existían y se dejaron igual');
+    if (r.errores.length) {
+        partes.push(r.errores.length + ' con errores: ' + r.errores.slice(0, 5)
+            .map((e) => 'fila ' + e.fila + ' (' + e.usuario + ': ' + e.error + ')').join(', ')
+            + (r.errores.length > 5 ? '…' : ''));
+    }
+    return { ok: r.errores.length === 0, texto: partes.join('; ') + '.' };
 }
 
 /** Un trozo de la subida. Contesta "SIGUE;<i>", "OK;<texto>" o "ERROR;<texto>". */
@@ -647,7 +723,9 @@ export function trozoSubida(token, d) {
         return 'ERROR;Trozo no válido. Vuelva a intentarlo.';
     }
     if (i === 0) {
-        subidas.set(token, { id: String(d.u || ''), total, partes: [] });
+        // z=1: el navegador lo comprimió (deflate-raw); k: qué se sube.
+        subidas.set(token, { id: String(d.u || ''), total, partes: [], z: d.z === '1',
+            k: d.k === 'importar' ? 'importar' : 'copia' });
     }
     const s = subidas.get(token);
     if (!s || s.id !== String(d.u || '') || s.total !== total || s.partes.length !== i) {
@@ -659,14 +737,15 @@ export function trozoSubida(token, d) {
         return 'SIGUE;' + i;
     }
     subidas.delete(token);
-    let copia;
+    let datos;
     try {
-        copia = JSON.parse(desdeBase64url(s.partes.join('')));
+        const bytes = bytesDeBase64url(s.partes.join(''));
+        datos = JSON.parse(textoUtf8(s.z ? inflar(bytes) : bytes));
     } catch (e) {
-        return 'ERROR;El fichero no es una copia válida (' + String((e && e.message) || e).slice(0, 60) + ').';
+        return 'ERROR;El fichero no es válido (' + String((e && e.message) || e).slice(0, 60) + ').';
     }
-    const r = aplicarCopia(copia);
-    console.log('[web] copia subida: ' + r.texto);
+    const r = s.k === 'importar' ? aplicarImportacion(datos) : aplicarCopia(datos);
+    console.log('[web] ' + s.k + ' subida (' + total + ' trozos' + (s.z ? ', comprimida' : '') + '): ' + r.texto);
     return (r.ok ? 'OK;' : 'ERROR;') + r.texto;
 }
 
@@ -678,7 +757,7 @@ function paginaCopia(token, msg) {
         + 'No borra a nadie.</p><input type="file" id="f" accept=".json"> '
         + '<button data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p></div>'
         + '<p><small>La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como un documento '
-        + 'confidencial.</small></p><script src="copia-bajar.js"></script><script src="copia-subir.js"></script>');
+        + 'confidencial.</small></p><script src="copia-bajar.js"></script><script src="subir.js"></script><script src="copia-subir.js"></script>');
 }
 
 /*
@@ -700,11 +779,23 @@ const COPIA_SUBIR_JS = 'function $(i){return document.getElementById(i)}'
     + 'if(!f)return e.textContent="Elija primero el fichero de la copia.";'
     + 'if(!confirm("¿Restaurar la impresora con "+f.name+"?"))return;'
     + 'f.text().then(function(t){try{JSON.parse(t)}catch(x){return e.textContent="Ese fichero no es una copia (no es JSON)."}'
-    + 'var c=btoa(unescape(encodeURIComponent(t))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,""),'
-    + 'n=' + config.WEB_TROZO_SUBIDA + ',tot=Math.ceil(c.length/n),u=Math.random().toString(36).slice(2,10);b.disabled=true;'
+    + 'subir(s,"copia",t,e,b)})}';
+
+/*
+ * Subida por trozos, común a la copia y a la importación. Si el navegador sabe
+ * (CompressionStream: Chrome, Edge, Firefox y Safari actuales), comprime antes: una
+ * copia de 1000 usuarios pasa de ~280 KB a ~30 KB y de ~1500 envíos a ~160. Si no,
+ * manda sin comprimir, como antes. La impresora lo sabe por z=1.
+ */
+const SUBIR_JS = 'function subir(s,k,t,e,b){var z=typeof CompressionStream=="function",'
+    + 'bl=new Blob([t]);b.disabled=true;e.className="";e.textContent="Preparando…";'
+    + '(z?new Response(bl.stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer():bl.arrayBuffer())'
+    + '.then(function(a){var u=new Uint8Array(a),x="",i;for(i=0;i<u.length;i+=8192)x+=String.fromCharCode.apply(null,u.subarray(i,i+8192));'
+    + 'var c=btoa(x).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,""),'
+    + 'n=' + config.WEB_TROZO_SUBIDA + ',tot=Math.max(1,Math.ceil(c.length/n)),id=Math.random().toString(36).slice(2,10);'
     + 'function p(i){e.textContent="Subiendo… "+Math.round(100*i/tot)+"%";'
     + 'fetch("subir",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},'
-    + 'body:"s="+s+"&u="+u+"&i="+i+"&t="+tot+"&d="+c.substr(i*n,n)}).then(function(r){return r.text()}).then(function(x){'
+    + 'body:"s="+s+"&k="+k+"&z="+(z?1:0)+"&u="+id+"&i="+i+"&t="+tot+"&d="+c.substr(i*n,n)}).then(function(r){return r.text()}).then(function(x){'
     + 'if(/^SIGUE;/.test(x))return p(i+1);b.disabled=false;'
     + 'if(/^(OK|ERROR);/.test(x)){e.textContent=x.slice(x.indexOf(";")+1);e.className=x[0]=="O"?"ok":"error"}'
     + 'else e.textContent="La sesión caducó, vuelva a entrar."'
@@ -732,6 +823,93 @@ function paginaCapacidad(token, msg) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Importar usuarios desde Excel                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * El Excel lo lee EL NAVEGADOR: un .xlsx es un ZIP con XML, y los navegadores actuales
+ * traen DecompressionStream y DOMParser, así que no hace falta ninguna librería ni
+ * internet. La impresora sólo recibe la lista ya leída (subida comprimida por trozos,
+ * como la copia) y vuelve a validar cada fila con las reglas del alta manual.
+ */
+
+function paginaImportar(token, msg) {
+    return documento('Importar usuarios', enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
+        + '<div class="caja"><p>1. <button data-s="' + token + '" onclick="bajarPlantilla(this)">Descargar plantilla</button> '
+        + 'y rellénela en Excel (una persona por fila).</p>'
+        + '<p>2. Elija el fichero (.xlsx o .csv): <input type="file" id="f" accept=".xlsx,.csv"> '
+        + '<button onclick="revisar()">Revisar</button></p>'
+        + '<p>3. <button id="b" data-s="' + token + '" disabled onclick="importar(this)">Importar</button> '
+        + '<span id="e"></span></p><div id="v"></div>'
+        + '<p><small>Los que ya existen se saltan sin cambiarlos. El Excel lleva los PIN en claro: '
+        + 'bórrelo o guárdelo como confidencial.</small></p></div>'
+        + cargador(['tabla', 'subir', 'importar']));
+}
+
+/** La plantilla (src/plantilla.js), en trozos de base64 que caben en una respuesta. */
+export function partePlantilla(desde) {
+    const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
+    const trozo = config.WEB_MAX_BYTES - 40;
+    const fin = Math.min(PLANTILLA_XLSX_B64.length, i0 + trozo);
+    return 'SIGUIENTE;' + (fin >= PLANTILLA_XLSX_B64.length ? -1 : fin) + '\n' + PLANTILLA_XLSX_B64.slice(i0, fin);
+}
+
+/*
+ * tabla.js: leerTabla(fichero) -> Promise de [{n: fila, c: [celdas]}]. Un .xlsx se abre
+ * a mano: se busca el directorio del ZIP, se descomprimen la primera hoja y los textos
+ * compartidos, y se leen las celdas por su referencia (B3 -> columna 1). Un .csv se
+ * parte por ; o , (lo que más haya en la primera línea), respetando las comillas.
+ */
+const TABLA_JS = 'function leerTabla(f){return/\\.(csv|txt)$/i.test(f.name)?f.text().then(leerCsv):f.arrayBuffer().then(leerXlsx)}'
+    + 'function leerCsv(t){t=t.replace(/^\\ufeff/,"");var l0=t.split("\\n")[0],s=l0.split(";").length>=l0.split(",").length?";":",",'
+    + 'R=[],f=[],c="",q=0,i,ch;for(i=0;i<=t.length;i++){ch=t[i];if(q){if(ch==\'"\'){if(t[i+1]==\'"\'){c+=ch;i++}else q=0}else c+=ch}'
+    + 'else if(ch==\'"\')q=1;else if(ch==s)f.push(c),c="";else if(ch=="\\n"||ch===undefined){f.push(c.replace(/\\r$/,""));R.push({n:R.length+1,c:f});f=[];c=""}else c+=ch}return R}'
+    + 'function leerXlsx(b){var v=new DataView(b),u=new Uint8Array(b),T=new TextDecoder(),e=b.byteLength-22,F={},i,o,n;'
+    + 'while(e>=0&&v.getUint32(e,true)!=0x06054b50)e--;if(e<0)throw"no es un Excel .xlsx";n=v.getUint16(e+10,true);o=v.getUint32(e+16,true);'
+    + 'for(i=0;i<n;i++){var nl=v.getUint16(o+28,true);F[T.decode(u.subarray(o+46,o+46+nl))]={m:v.getUint16(o+10,true),c:v.getUint32(o+20,true),'
+    + 'l:v.getUint32(o+42,true)};o+=46+nl+v.getUint16(o+30,true)+v.getUint16(o+32,true)}'
+    + 'function leer(k){var x=F[k];if(!x)return Promise.resolve("");var d=x.l+30+v.getUint16(x.l+26,true)+v.getUint16(x.l+28,true),r=u.subarray(d,d+x.c);'
+    + 'return(x.m?new Response(new Blob([r]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer():Promise.resolve(r))'
+    + '.then(function(a){return T.decode(a)})}'
+    + 'var h=Object.keys(F).filter(function(k){return/^xl\\/worksheets\\/sheet\\d+\\.xml$/.test(k)}).sort(function(a,b){return a.match(/\\d+/)-b.match(/\\d+/)})[0];'
+    + 'if(!h)throw"el Excel no tiene hojas";return Promise.all([leer("xl/sharedStrings.xml"),leer(h)]).then(function(r){var P=new DOMParser(),S=[],R=[],x=function(t){return P.parseFromString(t,"text/xml")};'
+    + 'if(r[0])[].forEach.call(x(r[0]).getElementsByTagName("si"),function(s){S.push([].map.call(s.getElementsByTagName("t"),function(t){return t.parentNode.nodeName=="rPh"?"":t.textContent}).join(""))});'
+    + '[].forEach.call(x(r[1]).getElementsByTagName("row"),function(w){var f=[];[].forEach.call(w.getElementsByTagName("c"),function(c){'
+    + 'var m=/^[A-Z]+/.exec(c.getAttribute("r")||""),k=0,j,t=c.getAttribute("t"),V=c.getElementsByTagName("v")[0];if(m)for(j=0;j<m[0].length;j++)k=k*26+m[0].charCodeAt(j)-64;'
+    + 'f[m?k-1:f.length]=t=="s"?S[+V.textContent]:t=="inlineStr"?c.textContent:V?V.textContent:""});R.push({n:+w.getAttribute("r")||R.length+1,c:f})});return R})}';
+
+/*
+ * importar.js: revisa cada fila con las MISMAS reglas que el alta (la impresora las
+ * vuelve a aplicar), enseña la vista previa sin mostrar los PIN, y sube sólo lo válido.
+ * Si la primera fila son títulos, las columnas se buscan por nombre; si no, van en el
+ * orden de la plantilla: usuario, PIN, nombre completo, cédula.
+ */
+const IMPORTAR_JS = 'var L=[];function $(i){return document.getElementById(i)}'
+    + 'function bajarPlantilla(b){var s=b.getAttribute("data-s"),t="";function p(n){fetch("plantilla.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
+    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m)return alert("La sesión caducó, vuelva a entrar");t+=x.slice(m[0].length);if(+m[1]>=0)return p(+m[1]);'
+    + 'var y=atob(t),u=new Uint8Array(y.length),i,a=document.createElement("a");for(i=0;i<y.length;i++)u[i]=y.charCodeAt(i);'
+    + 'a.href=URL.createObjectURL(new Blob([u],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));'
+    + 'a.download="plantilla-usuarios.xlsx";document.body.appendChild(a);a.click();a.remove()})}p(0)}'
+    + 'function existentes(s){var E={};function p(n){return fetch("usuarios.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
+    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m)throw"la sesión caducó, vuelva a entrar";x.slice(m[0].length).split("\\n").forEach(function(l){if(l)E[l.split("\\t")[0]]=1});'
+    + 'return+m[1]>=0?p(+m[1]):E})}return p(0)}'
+    + 'function revisar(){var f=$("f").files[0],e=$("e"),b=$("b");b.disabled=true;L=[];if(!f)return e.textContent="Elija el fichero.";e.className="";e.textContent="Leyendo…";'
+    + 'Promise.all([leerTabla(f),existentes(b.getAttribute("data-s"))]).then(function(r){var R=r[0],E=r[1],K=[0,1,2,3],U={},C={},nuevos=0,malos=0,ya=0,cab=R[0]&&R[0].c.join("|").toLowerCase();'
+    + 'if(cab&&/usuario/.test(cab)){K=["usuario","pin","nombre","c.dula"].map(function(k){return R[0].c.findIndex(function(x){return new RegExp(k).test(String(x||"").toLowerCase())})});R=R.slice(1)}'
+    + 'var h="<table><tr><td>Fila</td><td>Usuario</td><td>Nombre</td><td></td></tr>",libres=' + config.USUARIOS_MAX + '-Object.keys(E).length;'
+    + 'R.forEach(function(w){var g=function(i){return i<0?"":String(w.c[i]==null?"":w.c[i]).trim()},u=g(K[0]).toLowerCase(),p=g(K[1]),n=g(K[2]).replace(/\\s+/g," "),c=g(K[3]).replace(/[\\s.-]/g,"").toUpperCase(),m="";'
+    + 'if(!u&&!p&&!n&&!c)return;if(!/^[a-z0-9._-]{1,' + config.USUARIO_MAX + '}$/.test(u))m="usuario no válido";'
+    + 'else if(!/^[0-9]{' + config.PIN_MIN + ',' + config.PIN_MAX + '}$/.test(p))m="PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' números";'
+    + 'else if(n.length>' + config.NOMBRE_COMPLETO_MAX + '||/[<>;"]/.test(n))m="nombre no válido";else if(c&&!/^[0-9A-Z]{5,15}$/.test(c))m="cédula no válida";'
+    + 'else if(U[u])m="repetido en la fila "+U[u];else if(c&&C[c])m="cédula repetida en la fila "+C[c];'
+    + 'var z=E[u]&&!m;if(!m&&!z&&nuevos>=libres)m="no cabe: máximo ' + config.USUARIOS_MAX + ' usuarios";U[u]=U[u]||w.n;if(c)C[c]=C[c]||w.n;'
+    + 'if(m)malos++;else if(z)ya++;else{nuevos++;L.push([w.n,u,p,n,c])}'
+    + 'h+="<tr"+(m?\' class="error"\':z?\' class="inactivo"\':"")+"><td>"+w.n+"</td><td>"+u.replace(/</g,"&lt;")+"</td><td>"+n.replace(/</g,"&lt;")+"</td><td>"+(m||(z?"ya existe: se salta":"nuevo"))+"</td></tr>"});'
+    + '$("v").innerHTML=h+"</table>";e.textContent=nuevos+" nuevos, "+ya+" ya existen, "+malos+" con errores"+(malos?" (se importan sólo los válidos)":"");b.disabled=!nuevos'
+    + '}).catch(function(x){e.className="error";e.textContent="No se pudo leer: "+x})}'
+    + 'function importar(b){if(!L.length||!confirm("¿Dar de alta a "+L.length+" usuarios?"))return;subir(b.getAttribute("data-s"),"importar",JSON.stringify({filas:L}),$("e"),b);L=[]}';
+
+/* ------------------------------------------------------------------ */
 /* Rutas                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -743,6 +921,14 @@ export function atenderRuta(p, ahora) {
 
     if (p.ruta === '/estilo.css') {
         return { codigo: 200, tipo: 'text/css; charset=utf-8', cuerpo: ESTILO };
+    }
+    if (p.ruta === '/js') {
+        const js = { tabla: TABLA_JS, importar: IMPORTAR_JS, subir: SUBIR_JS }[d.n];
+        return js ? { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteTexto(js, d.desde) }
+            : { codigo: 404, tipo: 'text/plain', cuerpo: 'no existe' };
+    }
+    if (p.ruta === '/subir.js') {
+        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: SUBIR_JS };
     }
     if (p.ruta === '/copia-bajar.js' || p.ruta === '/copia-subir.js') {
         return { codigo: 200, tipo: 'text/javascript; charset=utf-8',
@@ -804,6 +990,12 @@ export function atenderRuta(p, ahora) {
     }
     if (p.ruta === '/usuarios.txt') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteUsuarios(d.desde) };
+    }
+    if (p.ruta === '/importar') {
+        return html(paginaImportar(token));
+    }
+    if (p.ruta === '/plantilla.txt') {
+        return { codigo: 200, tipo: 'text/plain', cuerpo: partePlantilla(d.desde) };
     }
     if (p.ruta === '/copia') {
         return html(paginaCopia(token));

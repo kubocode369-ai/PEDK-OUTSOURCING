@@ -1,0 +1,9 @@
+﻿Usuario;PIN;Nombre completo;Cédula
+lperez;0123;Lucía Pérez Núñez;0912345678
+MGomez;4567;Mario Gómez;1712345678
+ana;9999;Ana ya existe;
+lperez;1111;Duplicado en el fichero;
+corto;12;PIN demasiado corto;
+;;;
+sincedula;24680;;
+mala cedula;1234;Usuario con espacio;x

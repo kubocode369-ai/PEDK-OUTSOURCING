@@ -1203,7 +1203,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('apagar el respaldo', !store.ajustes().respaldoIp);
 
     // Copia de seguridad desde el navegador: descargar de una impresora y subir a otra vacía.
-    const navegador = (sesionTok, archivo) => {
+    const navegador = (sesionTok, archivo, comprimir = true) => {
         const env = { bajado: null, estado: { textContent: '', className: '' }, posts: [] };
         env.ctx = {
             fetch: (url, o) => {
@@ -1212,8 +1212,12 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
                 const b = o && o.method === 'POST' ? pedir('/' + ruta, 'POST', o.body).body : pedir('/' + ruta, 'GET', q).body;
                 return Promise.resolve({ text: () => Promise.resolve(b) });
             },
-            Blob: function (trozos) { this.texto = trozos.join(''); },
+            // Un Blob de verdad (la subida lo comprime con stream()) que además recuerda su texto.
+            Blob: function (trozos, o) { const b = new globalThis.Blob(trozos, o); b.texto = trozos.join(''); return b; },
             URL: { createObjectURL: (b) => b },
+            Response: globalThis.Response,
+            CompressionStream: comprimir ? globalThis.CompressionStream : undefined,
+            btoa: globalThis.btoa,
             document: {
                 createElement: () => ({ click() { env.bajado = this.href.texto; }, remove() {} }),
                 body: { appendChild() {} },
@@ -1222,7 +1226,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             alert: (m) => { env.estado.textContent = 'ALERTA ' + m; },
             confirm: () => true,
         };
-        const js = pedir('/copia-bajar.js').body + ';' + pedir('/copia-subir.js').body;
+        const js = pedir('/copia-bajar.js').body + ';' + pedir('/subir.js').body + ';' + pedir('/copia-subir.js').body;
         env.correr = (llamada) => new Function(...Object.keys(env.ctx), js + ';' + llamada)(...Object.values(env.ctx));
         env.boton = '{getAttribute:()=>"' + sesionTok + '",disabled:false}';
         return env;
@@ -1344,6 +1348,136 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     Object.save = lento;
     check('se para en el primer fallo y dice dónde', /falló con 1000 usuarios: sin espacio/.test(capacidad.estadoPrueba().fin)
         && capacidad.estadoPrueba().pasos.length === 4, capacidad.estadoPrueba().fin);
+
+    // ---- Importar usuarios desde Excel (ficheros guardados por Excel de verdad) ----
+    const { DOMParser } = await import('@xmldom/xmldom');
+    const { readFileSync: leerF } = await import('fs');
+    const fx = (n) => leerF(join(aqui, 'fixtures', n));
+    const archivoDe = (nombre, buf) => ({
+        name: nombre,
+        arrayBuffer: () => Promise.resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)),
+        text: () => Promise.resolve(buf.toString('utf8')),
+    });
+    /** Lo que hace la página /importar: cargar los scripts por partes y dar los botones. */
+    const paginaImportarEn = async (tok, archivo) => {
+        const els = { f: { files: archivo ? [archivo] : [] }, e: { textContent: '', className: '' }, v: { innerHTML: '' },
+            b: { disabled: true, getAttribute: () => tok } };
+        let codigo = '';
+        let mayorParte = 0;
+        for (const n of ['tabla', 'subir', 'importar']) {
+            for (let d = 0; ;) {
+                const b = pedir('/js', 'GET', 'n=' + n + '&desde=' + d).body;
+                mayorParte = Math.max(mayorParte, web.bytesUtf8(b));
+                const m = /^SIGUIENTE;(-?\d+)\n/.exec(b);
+                codigo += b.slice(m[0].length);
+                if (+m[1] < 0) break;
+                d = +m[1];
+            }
+            codigo += '\n';
+        }
+        const env = { bajado: null, mayorParte };
+        const ctx = {
+            document: { getElementById: (id) => els[id], body: { appendChild() {} },
+                createElement: () => ({ click() { env.bajado = this.href; }, remove() {} }) },
+            fetch: (url, o) => {
+                const [ruta, q] = url.split('?');
+                const b = o && o.method === 'POST' ? pedir('/' + ruta, 'POST', o.body).body : pedir('/' + ruta, 'GET', q).body;
+                return Promise.resolve({ text: () => Promise.resolve(b) });
+            },
+            DOMParser, URL: { createObjectURL: (b) => b }, alert: (m) => { els.e.textContent = 'ALERTA ' + m; }, confirm: () => true,
+            Blob: globalThis.Blob, Response: globalThis.Response, TextDecoder: globalThis.TextDecoder, atob: globalThis.atob, btoa: globalThis.btoa,
+            CompressionStream: globalThis.CompressionStream, DecompressionStream: globalThis.DecompressionStream,
+        };
+        env.fn = new Function(...Object.keys(ctx), codigo + ';return {revisar,importar,bajarPlantilla}')(...Object.values(ctx));
+        env.els = els;
+        return env;
+    };
+    const filasVista = (html) => (html.match(/<tr[^>]*><td>\d+<\/td>.*?<\/tr>/g) || [])
+        .map((tr) => tr.replace(/<[^>]+>/g, '|').replace(/\|+/g, '|').replace(/^\||\|$/g, ''));
+
+    for (const [nombreFx, tipo] of [['importar-excel.xlsx', 'xlsx'], ['importar-excel.csv', 'csv']]) {
+        equipo();
+        web._reiniciar();
+        web.instalar();
+        store.agregarUsuario('ana', '4321', { nombreCompleto: 'Ana Original' });
+        const tI = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+        const pagI = pedir('/importar', 'GET', 's=' + tI).body;
+        check(tipo + ': la página de importar cabe y carga sus scripts', web.bytesUtf8(pagI) <= config.WEB_MAX_BYTES && /js\?n=/.test(pagI));
+        const nav = await paginaImportarEn(tI, archivoDe(nombreFx, fx(nombreFx)));
+        check(tipo + ': los scripts llegan por partes que caben', nav.mayorParte <= config.WEB_MAX_BYTES, nav.mayorParte);
+        nav.fn.revisar();
+        await esperar(150);
+        const vista = filasVista(nav.els.v.innerHTML);
+        check(tipo + ': la vista previa marca cada fila', vista.join(' / ') === [
+            '2|lperez|Lucía Pérez Núñez|nuevo',
+            '3|mgomez|Mario Gómez|nuevo',
+            '4|ana|Ana ya existe|ya existe: se salta',
+            '5|lperez|Duplicado en el fichero|repetido en la fila 2',
+            '6|corto|PIN demasiado corto|PIN de 4 a 8 números',
+            '8|sincedula|nuevo',
+            '9|mala cedula|Usuario con espacio|usuario no válido',
+        ].join(' / '), vista.join(' / ') + ' · ' + nav.els.e.textContent);
+        check(tipo + ': resume y deja importar', /^3 nuevos, 1 ya existen, 3 con errores/.test(nav.els.e.textContent) && nav.els.b.disabled === false,
+            nav.els.e.textContent);
+        check(tipo + ': la vista previa no enseña los PIN', !/0123|4567|24680/.test(nav.els.v.innerHTML));
+        nav.fn.importar(nav.els.b);
+        await esperar(150);
+        const lp = store.usuarios().filter((u) => u.nombre === 'lperez')[0];
+        check(tipo + ': importa los válidos con su PIN (con cero inicial)', /3 usuario\(s\) creados/.test(nav.els.e.textContent)
+            && store.validarUsuario('lperez', '0123').ok && store.validarUsuario('mgomez', '4567').ok && store.validarUsuario('sincedula', '24680').ok,
+            nav.els.e.textContent);
+        check(tipo + ': conserva acentos y el cero inicial de la cédula', lp && lp.nombreCompleto === 'Lucía Pérez Núñez' && lp.cedula === '0912345678',
+            JSON.stringify(lp));
+        check(tipo + ': a quien ya existía no lo toca', store.validarUsuario('ana', '4321').ok
+            && store.usuarios().filter((u) => u.nombre === 'ana')[0].nombreCompleto === 'Ana Original');
+        check(tipo + ': los inválidos no entran', !store.usuarios().some((u) => /corto|mala/.test(u.nombre)) && store.usuarios().length === 4);
+    }
+
+    // La plantilla que se descarga es la de herramientas/.
+    const navP = await paginaImportarEn(token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body));
+    navP.fn.bajarPlantilla({ getAttribute: () => token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body) });
+    await esperar(50);
+    const plantillaBajada = navP.bajado ? Buffer.from(await navP.bajado.arrayBuffer()) : null;
+    check('la plantilla descargada es la de herramientas/', plantillaBajada && plantillaBajada.equals(fx('../../herramientas/plantilla-usuarios.xlsx')));
+
+    // La impresora vuelve a validar aunque alguien se salte el navegador.
+    const directo = (tok, obj) => pedir('/subir', 'POST', 's=' + tok + '&k=importar&z=0&u=x&i=0&t=1&d='
+        + Buffer.from(JSON.stringify(obj)).toString('base64url')).body;
+    const tD = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+    resp = directo(tD, { filas: [[2, 'x y', '1'], [3, 'valido', '5555', '<b>', '12']] });
+    check('la impresora revalida cada fila importada', /^ERROR;0 usuario\(s\) creados; 2 con errores: fila 2 \(x y: Usuario no válido/.test(resp)
+        && !store.usuarios().some((u) => u.nombre === 'valido'), resp);
+    const maxReal = config.USUARIOS_MAX;
+    config.USUARIOS_MAX = store.usuarios().length + 1;
+    resp = directo(tD, { filas: [[2, 'uno', '1111'], [3, 'dos', '2222']] });
+    config.USUARIOS_MAX = maxReal;
+    check('respeta el máximo de usuarios al importar', /1 usuario\(s\) creados; 1 con errores: fila 3 \(dos: Máximo/.test(resp), resp);
+
+    // Máximo de usuarios en el alta manual y en el aviso de la lista.
+    config.USUARIOS_MAX = store.usuarios().length;
+    check('en el máximo el alta manual se niega', !store.agregarUsuario('otro.mas', '1234').ok
+        && /borre alguno/.test(pedir('/nuevo', 'GET', 's=' + tD).body));
+    config.USUARIOS_MAX = maxReal;
+    const avisoReal = config.USUARIOS_AVISO;
+    config.USUARIOS_AVISO = 2;
+    check('pasado el aviso, la lista lo dice', /tarda más en guardar/.test(pedir('/usuarios', 'GET', 's=' + tD).body));
+    config.USUARIOS_AVISO = avisoReal;
+
+    // Una copia de 1000 usuarios se sube: comprimida en pocos trozos, y sin comprimir también.
+    for (const comprimir of [true, false]) {
+        equipo({ retencion: { KuboC: [] } });   // la copia trae modo retención: el equipo tiene que poder retener
+        web._reiniciar();
+        web.instalar();
+        const tM = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+        const grande = JSON.stringify(Object.assign({ formato: 1, app: config.WEB_APP }, capacidad.datosFalsos(1000)));
+        const navG = navegador(tM, { name: 'grande.json', text: () => Promise.resolve(grande) }, comprimir);
+        navG.correr('subirCopia(' + navG.boton + ')');
+        for (let i = 0; i < 300 && !navG.estado.className; i++) await esperar(20);
+        check('copia de 1000 usuarios ' + (comprimir ? 'comprimida' : 'sin comprimir') + ': se restaura entera',
+            store.usuarios().length === 1000 && navG.estado.className === 'ok', navG.estado.textContent);
+        check('  y en ' + (comprimir ? 'menos de 200' : 'menos de ' + config.WEB_SUBIDA_MAX_TROZOS) + ' envíos',
+            navG.posts.length < (comprimir ? 200 : config.WEB_SUBIDA_MAX_TROZOS), navG.posts.length);
+    }
 
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));

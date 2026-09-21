@@ -185,7 +185,14 @@ function renderUsuarios() {
         y += 42;
     }
     w.push(...paginador('pg', 12, 216, info, () => { pagina--; repintar(); }, () => { pagina++; repintar(); }));
-    w.push(boton('nuevo', 12, 252, 200, 34, '+ Nuevo usuario', COLOR.ok, () => ir('nombre')));
+    w.push(boton('nuevo', 12, 252, 200, 34, '+ Nuevo usuario', COLOR.ok, () => {
+        if (store.usuarios().length >= config.USUARIOS_MAX) {
+            decir('Máximo de ' + config.USUARIOS_MAX + ' usuarios: borre alguno', COLOR.peligro);
+            repintar();
+            return;
+        }
+        ir('nombre');
+    }));
     w.push(etiqueta('msg', 12, 294, 456, 20, recortar(mensaje, 62), colorMensaje));
     return w;
 }

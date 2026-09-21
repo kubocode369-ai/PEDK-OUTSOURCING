@@ -411,6 +411,7 @@ export function restaurarUsuarios(entrada) {
     let creados = 0;
     let actualizados = 0;
     let malos = 0;
+    let sinSitio = 0;
     for (const u of lista) {
         const n = normalizarUsuario(u && u.nombre);
         const huellaNueva = u && u.huella ? String(u.huella)
@@ -430,6 +431,9 @@ export function restaurarUsuarios(entrada) {
             ya.activo = u.activo === false ? false : true;
             Object.assign(ya, extra);
             actualizados++;
+        } else if (d.usuarios.length >= config.USUARIOS_MAX) {
+            sinSitio++;
+            continue;
         } else {
             d.usuarios.push(Object.assign({
                 nombre: n,
@@ -444,7 +448,7 @@ export function restaurarUsuarios(entrada) {
     if (creados || actualizados) {
         guardar();
     }
-    return { ok: creados + actualizados > 0, creados, actualizados, malos };
+    return { ok: creados + actualizados > 0, creados, actualizados, malos, sinSitio };
 }
 
 /** Nombres con los que se ha llamado la app: un respaldo de antes del cambio sigue valiendo. */
@@ -628,8 +632,8 @@ function validarDatos(datos, yo) {
     return { ok: true, datos: { cedula, nombreCompleto } };
 }
 
-/** `datos` = {cedula, nombreCompleto}, opcionales. */
-export function agregarUsuario(nombre, pin, datos) {
+/** Valida y crea SIN guardar: agregarUsuario guarda una vez; importarUsuarios, al final. */
+function crearUsuario(nombre, pin, datos) {
     const n = normalizarUsuario(nombre);
     if (!usuarioValido(n)) {
         return { ok: false, error: 'Usuario no válido (a-z, 0-9, . _ -)' };
@@ -638,7 +642,10 @@ export function agregarUsuario(nombre, pin, datos) {
         return { ok: false, error: 'Nombre reservado' };
     }
     if (buscar(n)) {
-        return { ok: false, error: 'Ese usuario ya existe' };
+        return { ok: false, error: 'Ese usuario ya existe', existe: true };
+    }
+    if (cargar().usuarios.length >= config.USUARIOS_MAX) {
+        return { ok: false, error: 'Máximo de ' + config.USUARIOS_MAX + ' usuarios alcanzado', lleno: true };
     }
     if (!pinValido(pin)) {
         return { ok: false, error: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos' };
@@ -649,8 +656,43 @@ export function agregarUsuario(nombre, pin, datos) {
     }
     cargar().usuarios.push(Object.assign({ nombre: n, huella: huella(n, pin), activo: true,
         creado: new Date().toISOString() }, v.datos));
-    guardar();
     return { ok: true };
+}
+
+/** `datos` = {cedula, nombreCompleto}, opcionales. */
+export function agregarUsuario(nombre, pin, datos) {
+    const r = crearUsuario(nombre, pin, datos);
+    if (r.ok) {
+        guardar();
+    }
+    return r;
+}
+
+/**
+ * Alta EN BLOQUE (importación desde Excel). Cada fila pasa por las mismas reglas que el
+ * alta manual, pero se guarda UNA vez al final: guardar tras cada persona serían ~0,85 s
+ * por cada 1000 usuarios, por persona (medido): minutos con la impresora parada.
+ * Quien ya existe se SALTA sin tocarlo: para cambiar a alguien está su ficha.
+ *
+ * @param {Array<{fila: number, usuario: string, pin: string, nombreCompleto?: string, cedula?: string}>} filas
+ * @returns {{creados: number, existentes: string[], errores: Array<{fila: number, usuario: string, error: string}>}}
+ */
+export function importarUsuarios(filas) {
+    const out = { creados: 0, existentes: [], errores: [] };
+    for (const f of filas || []) {
+        const r = crearUsuario(f && f.usuario, f && f.pin, { nombreCompleto: f && f.nombreCompleto, cedula: f && f.cedula });
+        if (r.ok) {
+            out.creados++;
+        } else if (r.existe) {
+            out.existentes.push(normalizarUsuario(f.usuario));
+        } else {
+            out.errores.push({ fila: Number(f && f.fila) || 0, usuario: String((f && f.usuario) || '').slice(0, 20), error: r.error });
+        }
+    }
+    if (out.creados) {
+        guardar();
+    }
+    return out;
 }
 
 /** Cambia cédula y nombre completo. Vacíos = se borran. */

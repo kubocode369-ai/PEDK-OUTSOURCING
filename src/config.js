@@ -15,6 +15,16 @@ export const config = {
 
     /** Nombre de usuario: minúsculas, dígitos y . _ - */
     USUARIO_MAX: 20,
+    /**
+     * CUÁNTOS USUARIOS. Medido el 21-09-2026 (Ajustes > Capacidad, dos veces): cada
+     * trabajo contado reescribe todos los datos, y eso tarda ~0,85 s por cada 1000
+     * usuarios (500 -> 0,44 s; 1000 -> 0,85 s; 3000 -> 2,4 s). Mientras dura, el panel
+     * y el guardián están parados. El espacio NO es el límite: 3000 cupieron.
+     * A partir de AVISO se avisa en la web; en MAX ya no se deja crear más.
+     */
+    USUARIOS_AVISO: 500,
+    USUARIOS_MAX: 1000,
+
     /** Nombre y apellidos de la persona, para saber quién es cada usuario. */
     NOMBRE_COMPLETO_MAX: 60,
 
@@ -106,6 +116,9 @@ export const config = {
      * seguridad se sube en trozos de estos caracteres (más ~50 del resto del envío).
      */
     WEB_TROZO_SUBIDA: 240,
-    /** 500 trozos = ~90 KB de copia: de sobra (la copia real ronda 1-10 KB). */
-    WEB_SUBIDA_MAX_TROZOS: 500,
+    /**
+     * 2000 trozos = ~360 KB: una copia de 1000 usuarios SIN comprimir (~280 KB) cabe.
+     * Comprimida (lo normal) son ~160 trozos.
+     */
+    WEB_SUBIDA_MAX_TROZOS: 2000,
 };
