@@ -853,8 +853,39 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     await esperar(config.RETENCION_RELEER_MS + 300);
     hablar();
     check('y la lista se vuelve a pedir sola', /ric · 1 documento/.test(mock.textos()) && !/No se confirmó/.test(mock.textos()), mock.textos());
+    check('en retención también hay botón para salir a la impresora', /Menú del equipo/.test(mock.textos()), mock.textos());
     silenciar();
     mock.pulsar('terminar');
+
+    // Retención con "Copia: con PIN": al entrar se abre la copia y hay "Ir a copiar".
+    equipo({ retencion: { KuboC: [{ doc: 'ric', pin: '1234' }] } });
+    store.agregarUsuario('ric', '1234');
+    store.cambiarAjuste('modo', 'retencion');
+    store.cambiarAjuste('bloquearCopia', true);
+    (await import('./.build/acciones.mjs')).fijarBloqueo(true);
+    hablar();
+    check('retención + copia con PIN: sin nadie dentro la copia está cerrada',
+        store.ajustes().bloqueoActivo && mock.switches.FUNC_T_COPY === 'FUNC_SW_OFF' && mock.switches.FUNC_T_NET_PRINT === 'FUNC_SW_ON',
+        JSON.stringify(mock.switches));
+    silenciar();
+    mock.pulsar('entrar');
+    teclear('ric');
+    mock.pulsar('seguir');
+    teclear('1234'); mock.pulsar('OK');
+    hablar();
+    check('al entrar se abre la copia y aparece "Ir a copiar"', mock.switches.FUNC_T_COPY === 'FUNC_SW_ON'
+        && /Ir a copiar/.test(mock.textos()), mock.textos() + ' ' + JSON.stringify(mock.switches));
+    let alMenu = 0;
+    const onBackReal = globalThis.process.on_back;
+    globalThis.process.on_back = () => { alMenu++; };
+    mock.pulsar('Ir a copiar');
+    globalThis.process.on_back = onBackReal;
+    check('"Ir a copiar" sale al menú de la impresora sin cerrar la sesión', alMenu === 1 && sesion.activa());
+    silenciar();
+    mock.pulsar('terminar');
+    hablar();
+    check('al terminar la copia se vuelve a cerrar', mock.switches.FUNC_T_COPY === 'FUNC_SW_OFF', JSON.stringify(mock.switches));
+    silenciar();
     historial.detener();
 
     // Mismo panel, otro equipo: uno que acepta la orden y no bloquea.

@@ -347,7 +347,15 @@ function renderRetenidos() {
         cargarRetenidos();
         repintar();
     }));
-    w.push(etiqueta('cuenta', 160, 262, 308, 20, recortar(textoCuenta(), 40), COLOR.suave));
+    // Como en el modo sesión: con "Copia: con PIN" la copia sólo se abre al entrar, y sin
+    // este botón no había forma de llegar a ella desde aquí. La sesión sigue abierta
+    // mientras copia (cada copia contada la alarga) y al terminar la copia se cierra.
+    w.push(boton('menuEquipo', 158, 256, 150, 30, store.ajustes().bloquearCopia ? 'Ir a copiar' : 'Menú del equipo',
+        COLOR.acento, () => {
+            sesion.actividad();
+            salirAlMenu();
+        }));
+    w.push(etiqueta('cuenta', 316, 262, 152, 20, recortar(textoCuenta(), 20), COLOR.suave));
     w.push(etiqueta('msg', 12, 292, 456, 22, recortar(mensaje || 'Se cierra sola en ' + textoRestante(), 62),
         mensaje ? colorMensaje : COLOR.tenue));
     return w;
