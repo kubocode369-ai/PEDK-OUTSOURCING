@@ -51,6 +51,13 @@ export const config = {
     HISTORIAL_CON_SESION_MS: 6000,
     HISTORIAL_SIN_SESION_MS: 30000,
 
+    /**
+     * Tras salir al menú de la impresora ("Ir a copiar") la app no se dibuja hasta que
+     * la persona vuelva. Si el equipo no avisara nunca de la vuelta, pasado este tiempo
+     * y SIN sesión abierta se recupera el panel (con sesión nunca: le quitaría la copia).
+     */
+    FUERA_MAX_MS: 2 * 60 * 1000,
+
     /** Repintado para recuperar el panel (reposo, vuelta al frente). */
     REPINTADO_MS: 8000,
     REPINTADO_HUECO_MIN_MS: 5000,

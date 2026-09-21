@@ -20,7 +20,7 @@ import { config } from './config.js';
 import { guard } from './guard.js';
 import { enReposo, escucharDespertar } from './powerSave.js';
 import { COLOR, ambito, boton, etiqueta, pantalla, paginador, paginar, recortar, tecladoNumerico, tecladoTexto } from './ui.js';
-import { conectarDibujo, mostrar, repintar, pantallaActiva } from './router.js';
+import { conectarDibujo, mostrar, repintar, pantallaActiva, salioDeLaApp, volvioALaApp, tiempoFuera } from './router.js';
 import * as store from './store.js';
 import * as cerradura from './cerradura.js';
 import * as historial from './historial.js';
@@ -137,6 +137,10 @@ function renderInicio() {
  * La app sigue viva al fondo, con su sesión y sus temporizadores.
  */
 function salirAlMenu() {
+    // Desde aquí no se dibuja hasta que vuelva (ver router.js): si no, la app se trae
+    // al frente sola y no deja copiar.
+    salioDeLaApp();
+    console.log('[app] sale al menú de la impresora (' + (sesion.activa() ? 'con sesión de ' + sesion.usuario() : 'sin sesión') + ')');
     const soltar = globalThis.js_screenctrl_draw_exit;
     if (typeof soltar === 'function') {
         try { soltar(); } catch (e) { console.log('[app] draw_exit: ' + (e && e.message)); }
@@ -146,6 +150,7 @@ function salirAlMenu() {
         proc.on_back();
         return;
     }
+    volvioALaApp();
     decir('Este equipo no permite salir de la app', COLOR.peligro);
     repintar();
 }
@@ -536,16 +541,33 @@ function repintarSiSePuede(forzar) {
 }
 
 function instalarRecuperacion() {
+    // Volver a la app (su icono o la tecla Inicio) es lo que la saca del modo "fuera".
     try {
-        process.on_front = guard('alFrente', () => repintarSiSePuede(true));
+        process.on_front = guard('alFrente', () => {
+            if (tiempoFuera() >= 0) console.log('[app] vuelve a la app (on_front) tras ' + Math.round(tiempoFuera() / 1000) + ' s fuera');
+            volvioALaApp();
+            repintarSiSePuede(true);
+        });
     } catch (e) { /* noop */ }
     try {
-        new KeyCtrl().setCallBackFunc(9, 0, guard('teclaCasa', () => repintarSiSePuede(true)));
+        new KeyCtrl().setCallBackFunc(9, 0, guard('teclaCasa', () => {
+            if (tiempoFuera() >= 0) console.log('[app] vuelve a la app (tecla Inicio) tras ' + Math.round(tiempoFuera() / 1000) + ' s fuera');
+            volvioALaApp();
+            repintarSiSePuede(true);
+        }));
     } catch (e) { /* noop */ }
     escucharDespertar(() => {
         setTimeout(guard('despertar', () => repintarSiSePuede(true)), config.REPINTADO_TRAS_DESPERTAR_MS);
     });
-    setInterval(guard('repintado', () => repintarSiSePuede(false)), config.REPINTADO_MS);
+    setInterval(guard('repintado', () => {
+        // Red de seguridad por si el equipo nunca avisa de la vuelta: sin nadie dentro y
+        // pasado un buen rato, se recupera el panel como antes.
+        if (tiempoFuera() > config.FUERA_MAX_MS && !sesion.activa()) {
+            console.log('[app] fuera sin sesión más de ' + (config.FUERA_MAX_MS / 1000) + ' s: se recupera el panel');
+            volvioALaApp();
+        }
+        repintarSiSePuede(false);
+    }), config.REPINTADO_MS);
 }
 
 /* ------------------------------------------------------------------ */

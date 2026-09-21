@@ -881,6 +881,16 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     mock.pulsar('Ir a copiar');
     globalThis.process.on_back = onBackReal;
     check('"Ir a copiar" sale al menú de la impresora sin cerrar la sesión', alMenu === 1 && sesion.activa());
+    // Lo que antes la traía al frente a los pocos segundos: repintados, reloj, la copia contada.
+    const router = await import('./.build/router.mjs');
+    const dibujosAntes = mock.dibujos();
+    // Todo dibujo pasa por el router: repintado periódico, reloj de la sesión y copia contada.
+    router.repintar();
+    await esperar(config.REPINTADO_MS + 300);
+    check('mientras copia, la app NO se dibuja (no le quita la pantalla)', mock.dibujos() === dibujosAntes,
+        (mock.dibujos() - dibujosAntes) + ' dibujos');
+    globalThis.process.on_front();
+    check('al volver a la app se dibuja su pantalla', mock.dibujos() > dibujosAntes && /Ir a copiar/.test(mock.textos()), mock.textos());
     silenciar();
     mock.pulsar('terminar');
     hablar();

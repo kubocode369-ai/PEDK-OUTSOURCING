@@ -14,6 +14,8 @@ class Label {}
 class Button {}
 
 let pantallaActual = [];
+/** Cuántas veces se ha dibujado: en este equipo dibujar trae la app al frente. */
+let dibujos = 0;
 
 /**
  * Los listeners que el EQUIPO recuerda, en el orden en que se registraron.
@@ -61,6 +63,7 @@ class ScreenCtrl {
             }
         }
         pantallaActual = widgets;
+        dibujos++;
         registrar(widgets);
     }
     setScreenBrightness() {}
@@ -306,6 +309,7 @@ export function makePedk(opts = {}) {
     };
 
     return {
+        dibujos: () => dibujos,
         pedk,
         switches,
         liberados,
