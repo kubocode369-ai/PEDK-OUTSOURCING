@@ -204,44 +204,123 @@ function paginaLogin(msg) {
         + '<button>Entrar</button></form>' + mensajeHtml(msg) + '</div>');
 }
 
-/** Lista compacta: mete filas mientras quepan en el tope y pagina el resto. */
+/**
+ * Pagina `filas` (HTML de cada fila) según lo que quepa en el tope. `armar(filas, pie)`
+ * devuelve la página entera. Los cortes se calculan siempre desde la primera fila: cada
+ * página sale igual la pida quien la pida.
+ */
+function paginarFilas(token, ruta, filas, pagina, armar) {
+    const reserva = 200;   // lo que ocupan "« Anterior · Página x de y · Siguiente »"
+    const cortes = [0];
+    let acumulado = '';
+    for (let i = 0; i < filas.length; i++) {
+        if (acumulado && bytesUtf8(armar(acumulado + filas[i], '')) + reserva > config.WEB_MAX_BYTES) {
+            cortes.push(i);
+            acumulado = '';
+        }
+        acumulado += filas[i];
+    }
+    const total = cortes.length;
+    const n = Math.max(0, Math.min(total - 1, Math.floor(Number(pagina)) || 0));
+    const hasta = n + 1 < total ? cortes[n + 1] : filas.length;
+    let pie = '';
+    if (total > 1) {
+        pie = '<p>' + (n > 0 ? enlace(token, ruta, '&p=' + (n - 1), '« Anterior') + ' · ' : '')
+            + 'Página ' + (n + 1) + ' de ' + total
+            + (n + 1 < total ? ' · ' + enlace(token, ruta, '&p=' + (n + 1), 'Siguiente »') : '') + '</p>';
+    }
+    return armar(filas.slice(cortes[n], hasta).join(''), pie);
+}
+
+/** Lista compacta de usuarios. */
 function paginaUsuarios(token, msg, pagina) {
     const lista = store.usuarios();
-    const cab = '<span>' + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
+    const cab = '<span>' + enlace(token, 'contadores', '', 'Contadores') + ' · '
+        + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
     const aviso = store.pinAdminDeFabrica()
         ? '<p class="caja aviso">El PIN de administrador es el de fábrica: cámbielo en el panel.</p>' : '';
-    const fila = (u) => {
+    const filas = lista.map((u) => {
         const c = store.contadorDe(u.nombre);
         return '<tr' + (u.activo === false ? ' class="inactivo"' : '') + '><td>'
             + enlace(token, 'usuario', '&n=' + encodeURIComponent(u.nombre), '<b>' + escapar(u.nombre) + '</b>')
             + '</td><td>' + (u.activo === false ? 'desactivado' : 'activo') + '</td><td>'
             + (c.paginas + c.paginasCopia) + ' pág.</td></tr>';
-    };
-    const armar = (filas, pie) => documento('Usuarios (' + lista.length + ')', cab, aviso + mensajeHtml(msg)
-        + '<div class="caja">' + (lista.length ? '<table>' + filas + '</table>' : 'No hay usuarios.') + pie + '</div>');
-    // Los cortes se calculan siempre desde el primero: cada página sale igual la pida quien la pida.
-    const reserva = 200;   // lo que ocupan "« Anterior · Página x de y · Siguiente »"
-    const cortes = [0];
-    let filas = '';
-    for (let i = 0; i < lista.length; i++) {
-        const f = fila(lista[i]);
-        if (filas && bytesUtf8(armar(filas + f, '')) + reserva > config.WEB_MAX_BYTES) {
-            cortes.push(i);
-            filas = '';
-        }
-        filas += f;
-    }
-    const total = cortes.length;
-    const n = Math.max(0, Math.min(total - 1, Math.floor(Number(pagina)) || 0));
-    const hasta = n + 1 < total ? cortes[n + 1] : lista.length;
-    let pie = '';
-    if (total > 1) {
-        pie = '<p>' + (n > 0 ? enlace(token, 'usuarios', '&p=' + (n - 1), '« Anterior') + ' · ' : '')
-            + 'Página ' + (n + 1) + ' de ' + total
-            + (n + 1 < total ? ' · ' + enlace(token, 'usuarios', '&p=' + (n + 1), 'Siguiente »') : '') + '</p>';
-    }
-    return armar(lista.slice(cortes[n], hasta).map(fila).join(''), pie);
+    });
+    return paginarFilas(token, 'usuarios', filas, pagina, (f, pie) => documento('Usuarios (' + lista.length + ')', cab,
+        aviso + mensajeHtml(msg) + '<div class="caja">' + (lista.length ? '<table>' + f + '</table>' : 'No hay usuarios.')
+        + pie + '</div>'));
 }
+
+/** Cómo se llama en pantalla y en el CSV a quien no se identificó. */
+function persona(quien) {
+    return quien === store.SIN_SESION ? 'Sin identificar' : quien;
+}
+
+function paginaContadores(token, msg, pagina) {
+    const lista = store.contadores();
+    const t = store.totales();
+    const cab = '<span>' + enlace(token, 'usuarios', '', 'Usuarios') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
+    const filas = lista.map((c) => '<tr><td><b>' + escapar(persona(c.quien)) + '</b></td><td>' + c.impresiones
+        + '</td><td>' + c.paginas + '</td><td>' + c.copias + '</td><td>' + c.paginasCopia + '</td><td>'
+        + (c.paginas + c.paginasCopia) + '</td></tr>');
+    const acciones = '<p><button data-s="' + token + '" onclick="bajarCsv(this)">Descargar CSV (Excel)</button></p>'
+        + formulario(token, 'cero', '<button onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
+            + 'Descargue antes el CSV.\')">Poner a cero</button>');
+    return paginarFilas(token, 'contadores', filas, pagina, (f, pie) => documento('Contadores', cab, mensajeHtml(msg)
+        + '<div class="caja"><p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> pág. (' + t.paginas + ' impresas, '
+        + t.paginasCopia + ' copiadas)</p>'
+        + (lista.length
+            ? '<table><tr><td>Persona</td><td>Impr.</td><td>Pág.</td><td>Copias</td><td>Pág. copia</td><td>Total</td></tr>'
+                + f + '</table>'
+            : 'Aún no hay nada contado.')
+        + pie + '</div><div class="caja">' + acciones + '</div><script src="csv.js"></script>'));
+}
+
+/*
+ * CSV por partes: un CSV con mucha gente no cabe en una respuesta. El navegador pide
+ * /csv?desde=0, luego desde=<siguiente>... y lo junta en un solo fichero. Mismo formato
+ * que respaldos/contadores.csv del servidor de respaldo: ';' y BOM para Excel en español.
+ * La primera línea de cada parte es "SIGUIENTE;<índice o -1>" y el navegador la quita.
+ */
+export function parteCsv(desde) {
+    const lista = store.contadores();
+    const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
+    let texto = i0 === 0 ? 'Persona;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n' : '';
+    let i = i0;
+    const margen = 120;   // la línea SIGUIENTE y la de TOTAL
+    for (; i < lista.length; i++) {
+        const c = lista[i];
+        const linea = persona(c.quien).replace(/[;\r\n]/g, ' ') + ';' + c.impresiones + ';' + c.paginas + ';'
+            + c.copias + ';' + c.paginasCopia + ';' + (c.paginas + c.paginasCopia) + '\n';
+        if (i > i0 && bytesUtf8(texto + linea) + margen > config.WEB_MAX_BYTES) {
+            break;
+        }
+        texto += linea;
+    }
+    if (i >= lista.length) {
+        const t = store.totales();
+        if (lista.length) {
+            texto += 'TOTAL;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia + ';'
+                + (t.paginas + t.paginasCopia) + '\n';
+        }
+        return 'SIGUIENTE;-1\n' + texto;
+    }
+    return 'SIGUIENTE;' + i + '\n' + texto;
+}
+
+/* El script que junta las partes. La fecha la pone el navegador: el reloj de la
+   impresora va horas adelantado respecto al de la app (medido). */
+const CSV_JS = 'function bajarCsv(b){var s=b.getAttribute("data-s"),t="",n=0;b.disabled=true;'
+    + 'function fin(e){b.disabled=false;if(e){alert("No se pudo descargar: "+e);return}'
+    + 'var d=new Date(),f=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);'
+    + 'var h=f+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);'
+    + 'var a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\\ufeffDescargado;"+h+"\\n\\n"+t],{type:"text/csv;charset=utf-8"}));'
+    + 'a.download="contadores-"+f+".csv";document.body.appendChild(a);a.click();a.remove()}'
+    + 'function pedir(desde){if(++n>200)return fin("demasiadas partes");'
+    + 'fetch("csv?s="+s+"&desde="+desde).then(function(r){return r.text()}).then(function(x){'
+    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m)return fin("la sesión caducó, vuelva a entrar");'
+    + 't+=x.slice(m[0].length);var sig=+m[1];if(sig<0)fin();else pedir(sig)}).catch(function(e){fin(e)})}'
+    + 'pedir(0)}';
 
 function paginaNuevo(token, msg) {
     return documento('Nuevo usuario', enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
@@ -281,6 +360,9 @@ export function atenderRuta(p, ahora) {
 
     if (p.ruta === '/estilo.css') {
         return { codigo: 200, tipo: 'text/css; charset=utf-8', cuerpo: ESTILO };
+    }
+    if (p.ruta === '/csv.js') {
+        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CSV_JS };
     }
     if (p.ruta === '/eco') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: 'ruta=' + p.ruta + ' metodo=' + p.metodo
@@ -322,6 +404,12 @@ export function atenderRuta(p, ahora) {
         sesiones.delete(token);
         return html(paginaLogin({ ok: true, texto: 'Sesión cerrada.' }));
     }
+    if (p.ruta === '/contadores') {
+        return html(paginaContadores(token, null, d.p));
+    }
+    if (p.ruta === '/csv') {
+        return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteCsv(d.desde) };
+    }
     if (p.ruta === '/nuevo') {
         return html(paginaNuevo(token));
     }
@@ -357,6 +445,12 @@ export function atenderRuta(p, ahora) {
             msg = { ok: false, texto: 'Acción desconocida.' };
         }
         return html(paginaUsuario(token, nombre, anotar(msg)));
+    }
+    if (p.ruta === '/cero' && cambia) {
+        const t = store.totales();
+        store.reiniciarContadores();
+        return html(paginaContadores(token, anotar({ ok: true, texto: 'Contadores a cero (había '
+            + (t.paginas + t.paginasCopia) + ' páginas).' })));
     }
     return html(paginaUsuarios(token, null, d.p));
 }

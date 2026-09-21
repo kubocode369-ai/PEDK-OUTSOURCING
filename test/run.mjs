@@ -971,6 +971,59 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             const b = pedir('/entrar', 'POST', 'pin=0').body; config.WEB_MAX_BYTES = o; return /no cabe/.test(b); })());
     check('/tam mide el tope a propósito', pedir('/tam', 'GET', 'n=5000').body.length === 5000);
 
+    // Contadores: 60 personas con trabajos, más lo que se imprimió sin identificarse.
+    store.usuarios().forEach((u, i) => store.contar(u.nombre, { tipo: i % 3 ? 'PRINT' : 'COPY', paginas: i + 1 }));
+    store.contar(store.SIN_SESION, { tipo: 'PRINT', paginas: 7 });
+    const cont = [];
+    let mayorC = 0;
+    for (let n = 0; n < 100; n++) {
+        const b = pedir('/contadores', 'GET', 's=' + s3 + '&p=' + n).body;
+        mayorC = Math.max(mayorC, web.bytesUtf8(b));
+        const nuevos = (b.match(/<tr><td><b>[^<]+<\/b>/g) || []).filter((x) => !cont.includes(x));
+        if (!nuevos.length) break;
+        cont.push(...nuevos);
+    }
+    check('contadores: ninguna página pasa del tope', mayorC <= config.WEB_MAX_BYTES, mayorC);
+    check('contadores: paginando salen todos', cont.length === store.contadores().length, cont.length + ' de ' + store.contadores().length);
+    check('quien no se identificó sale como "Sin identificar"', cont.some((x) => /Sin identificar/.test(x)));
+
+    // El CSV lo junta el navegador: se ejecuta el script de verdad con fetch simulado.
+    const js = pedir('/csv.js').body;
+    let bajado = null;
+    let partes = 0;
+    let mayorP = 0;
+    const entorno = {
+        fetch: (url) => {
+            partes++;
+            const [ruta, q] = url.split('?');
+            const b = pedir('/' + ruta, 'GET', q).body;
+            mayorP = Math.max(mayorP, web.bytesUtf8(b));
+            return Promise.resolve({ text: () => Promise.resolve(b) });
+        },
+        Blob: function (trozos) { this.texto = trozos.join(''); },
+        URL: { createObjectURL: (b) => b },
+        document: { createElement: () => ({ click() { bajado = this; }, remove() {} }), body: { appendChild() {} } },
+        alert: (m) => { bajado = { error: m }; },
+    };
+    new Function(...Object.keys(entorno), js + ';bajarCsv({getAttribute:()=>"' + s3 + '",disabled:false});')(...Object.values(entorno));
+    await esperar(50);
+    const csv = bajado && bajado.href && bajado.href.texto;
+    const lineas = csv ? csv.split('\n').filter(Boolean) : [];
+    check('el CSV se descarga en varias partes y cada una cabe', partes > 1 && mayorP <= config.WEB_MAX_BYTES, partes + ' partes, ' + mayorP + ' bytes');
+    check('el CSV lleva BOM, cabecera, a todos y el TOTAL',
+        !!csv && csv.charCodeAt(0) === 0xfeff && lineas.some((l) => /^Persona;Impresiones/.test(l))
+        && lineas.length - lineas.findIndex((l) => /^Persona;/.test(l)) - 2 === store.contadores().length
+        && /^TOTAL;/.test(lineas[lineas.length - 1]), bajado && (bajado.error || lineas.length));
+    const tot = store.totales();
+    check('el TOTAL del CSV cuadra', lineas.length && lineas[lineas.length - 1] === 'TOTAL;' + tot.impresiones + ';'
+        + tot.paginas + ';' + tot.copias + ';' + tot.paginasCopia + ';' + (tot.paginas + tot.paginasCopia), lineas[lineas.length - 1]);
+    check('el CSV pide sesión', !/^SIGUIENTE/.test(pedir('/csv', 'GET', 'desde=0').body));
+
+    pedir('/cero', 'GET', 's=' + s3);
+    check('poner a cero por GET no hace nada', store.contadores().length > 0);
+    resp = pedir('/cero', 'POST', 's=' + s3);
+    check('poner a cero por POST', /Contadores a cero/.test(resp.body) && store.contadores().length === 0);
+
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
     delete mock.pedk.net.http.Response;
