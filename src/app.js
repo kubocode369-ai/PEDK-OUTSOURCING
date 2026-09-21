@@ -29,6 +29,7 @@ import * as retencion from './retencion.js';
 import * as diagnostico from './diagnostico.js';
 import * as vigia from './vigia.js';
 import * as respaldo from './respaldo.js';
+import * as web from './web.js';
 import { abrirAjustes } from './ajustes.js';
 
 const { ScreenCtrl, KeyCtrl } = pedk.ui;
@@ -570,6 +571,9 @@ function arrancar() {
     try {
         respaldo.automatico();
     } catch (e) { console.log('[arranque] respaldo: ' + (e && e.message)); }
+    try {
+        web.instalar();
+    } catch (e) { console.log('[arranque] web: ' + (e && e.message)); }
 
     setInterval(guard('reloj', () => {
         if (sesion.vencida()) {

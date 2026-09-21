@@ -171,6 +171,8 @@ export function makePedk(opts = {}) {
     const red = {
         http: {
             Headers: function (k, v) { this.k = k; this.v = v; },
+            Response: function (code, headers, body) { this.code = code; this.headers = headers; this.body = body; },
+            receiveData: function () {},
             RequestBody: function (data) { this.data = data; },
             Request: function (url, method, headers, body) {
                 this.url = url; this.method = method; this.headers = headers; this.body = body;

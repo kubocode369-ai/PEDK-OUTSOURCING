@@ -80,4 +80,20 @@ export const config = {
     RESPALDO_AUTO_MS: 30 * 60 * 1000,
     /** Margen tras arrancar antes del primer respaldo: que la red esté lista. */
     RESPALDO_ESPERA_INICIAL_MS: 60 * 1000,
+
+    /**
+     * PANEL WEB en la propia impresora: http://<ip>/pedk/app_notify/<WEB_APP>.
+     * Tiene que ser el `name` del package.json: el firmware enruta por él (medido el
+     * 21-09-2026; con otro nombre contesta "app name is not find!!!").
+     */
+    WEB_APP: 'impresion-pin-BM5220ADW',
+    /** Minutos sin usar la web tras los que hay que volver a poner el PIN. */
+    WEB_SESION_MS: 15 * 60 * 1000,
+    /**
+     * Tope de cada respuesta web, en bytes. Medido el 21-09-2026 con /tam?n=...: hasta
+     * 1998 bytes salen; desde 1999 la impresora anuncia la respuesta y no manda nada
+     * (página en blanco). Con 4390 además dejó la web colgada hasta reiniciar. Se deja
+     * margen por si el firmware cuenta algo más que el cuerpo.
+     */
+    WEB_MAX_BYTES: 1800,
 };

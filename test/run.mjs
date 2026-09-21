@@ -868,6 +868,115 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
         /No se pudo bloquear/.test(mock.textos()) && !store.ajustes().bloqueoActivo, mock.textos());
 }
 
+hablar(); console.log('· Panel web servido por la impresora'); silenciar();
+{
+    const web = await import('./.build/web.mjs');
+    equipo();
+    web._reiniciar();
+    store.agregarUsuario('ana', '4321');
+    const r = web.instalar();
+    const BASE = '/pedk/app_notify/' + config.WEB_APP;
+    // La forma de la petición no está documentada: se prueba con {url, method, body} en texto.
+    const pedir = (ruta, metodo, cuerpo) => mock.pedk.net.http.receiveData(
+        { url: BASE + ruta, method: metodo || 'GET', body: cuerpo || '' });
+    const token = (html) => (/(?:name="s" value="|[?]s=)([0-9a-f]+)/.exec(html) || [])[1];
+    hablar();
+    check('se engancha a receiveData', r.ok, r.motivo);
+
+    let resp = pedir('');
+    check('sin sesión enseña el login', resp.code === 200 && /PIN de administrador/.test(resp.body) && !/ana/.test(resp.body));
+    check('lee ruta, método y campos de url y cuerpo',
+        JSON.stringify(web.leerPeticion({ url: 'http://1.2.3.4' + BASE + '/usuarios/alta/?s=abc', method: 'post', body: 'nombre=Pe%C3%B1a+x&pin=12' }))
+        === JSON.stringify({ ruta: '/usuarios/alta', metodo: 'POST', datos: { s: 'abc', nombre: 'Peña x', pin: '12' } }));
+    check('acepta el cuerpo como RequestBody o JSON',
+        web.leerPeticion({ url: BASE, body: { data: { pin: 1 } } }).datos.pin === '1'
+        && web.leerPeticion({ url: BASE, body: '{"pin":"2"}' }).datos.pin === '2');
+
+    resp = pedir('/entrar', 'POST', 'pin=9999');
+    check('PIN de administrador malo no entra', /PIN incorrecto/.test(resp.body) && !token(resp.body));
+    resp = pedir('/usuarios', 'GET', 's=inventado');
+    check('un token inventado no vale', /caducó/.test(resp.body) && !/ana/.test(resp.body));
+
+    resp = pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA);
+    const s = token(resp.body);
+    check('el PIN de administrador abre la sesión y lista usuarios', !!s && /<b>ana<\/b>/.test(resp.body));
+    check('avisa de que el PIN de admin es el de fábrica', /de fábrica/.test(resp.body));
+    check('nunca muestra PIN ni huellas', !/4321/.test(resp.body) && !resp.body.includes(store.huella('ana', '4321')));
+
+    resp = pedir('/alta', 'POST', 's=' + s + '&nombre=Beto&pin=5678');
+    check('da de alta desde la web', /beto dado de alta/.test(resp.body) && store.validarUsuario('beto', '5678').ok);
+    resp = pedir('/alta', 'POST', 's=' + s + '&nombre=beto&pin=1111');
+    check('no admite repetidos', /ya existe/.test(resp.body));
+    pedir('/alta', 'GET', 's=' + s + '&nombre=cid&pin=1111');
+    check('por GET no cambia nada', !store.usuarios().some((u) => u.nombre === 'cid'));
+    pedir('/cambiar', 'GET', 's=' + s + '&nombre=beto&a=borrar');
+    check('ni borra', store.usuarios().some((u) => u.nombre === 'beto'));
+
+    resp = pedir('/cambiar', 'POST', 's=' + s + '&nombre=beto&a=pin&pin=12');
+    check('rechaza un PIN corto', /dígitos/.test(resp.body) && store.validarUsuario('beto', '5678').ok);
+    resp = pedir('/cambiar', 'POST', 's=' + s + '&nombre=beto&a=pin&pin=2468');
+    check('cambia el PIN', /cambiado/.test(resp.body) && store.validarUsuario('beto', '2468').ok);
+
+    pedir('/cambiar', 'POST', 's=' + s + '&nombre=beto&a=desactivar');
+    check('desactiva', !store.validarUsuario('beto', '2468').ok);
+    pedir('/cambiar', 'POST', 's=' + s + '&nombre=beto&a=activar');
+    check('y vuelve a activar', store.validarUsuario('beto', '2468').ok);
+
+    resp = pedir('/cambiar', 'POST', 's=' + s + '&nombre=beto&a=borrar');
+    check('borra', /beto borrado/.test(resp.body) && !store.usuarios().some((u) => u.nombre === 'beto'));
+
+    resp = pedir('/alta', 'POST', 's=' + s + '&nombre=' + encodeURIComponent('<script>') + '&pin=1234');
+    check('escapa lo que pinta', !/<script>/.test(resp.body), resp.body.slice(0, 200));
+
+    resp = pedir('/salir', 'POST', 's=' + s);
+    check('salir cierra la sesión', /Sesión cerrada/.test(resp.body) && /caducó/.test(pedir('/usuarios', 'GET', 's=' + s).body));
+
+    const t0 = Date.now();
+    const p = (pin) => web.atenderRuta({ ruta: '/entrar', metodo: 'POST', datos: { pin } }, t0);
+    for (let i = 0; i < config.INTENTOS_MAX; i++) p('0000');
+    check('frena tras varios PIN malos, aunque luego acierte', /Demasiados intentos/.test(p(config.PIN_ADMIN_FABRICA).cuerpo));
+    store.olvidarFallos('#web-admin');
+
+    const s2 = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+    const tarde = Date.now() + config.WEB_SESION_MS + 1000;
+    check('la sesión caduca sin uso',
+        /caducó/.test(web.atenderRuta({ ruta: '/usuarios', metodo: 'GET', datos: { s: s2 } }, tarde).cuerpo));
+
+    // El firmware se cuelga con respuestas grandes: con mucha gente, nada puede pasar del tope.
+    const s3 = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+    for (let i = 0; i < 60; i++) store.agregarUsuario('persona.larga.' + String(i).padStart(3, '0'), '1234');
+    const vistos = new Set();
+    let paginas = 0;
+    let mayor = 0;
+    for (let n = 0; n < 100; n++) {
+        const b = pedir('/usuarios', 'GET', 's=' + s3 + '&p=' + n).body;
+        mayor = Math.max(mayor, web.bytesUtf8(b));
+        const antes = vistos.size;
+        (b.match(/<b>[^<]+<\/b>/g) || []).forEach((x) => vistos.add(x));
+        if (vistos.size === antes) break;
+        paginas++;
+    }
+    check('con 60 usuarios ninguna página pasa del tope', mayor <= config.WEB_MAX_BYTES, mayor + ' bytes');
+    check('y paginando se ven todos', vistos.size === store.usuarios().length && paginas > 1,
+        vistos.size + ' de ' + store.usuarios().length + ' en ' + paginas + ' pág.');
+    const ficha = pedir('/usuario', 'GET', 's=' + s3 + '&n=persona.larga.007').body;
+    check('la ficha de un usuario trae sus acciones y cabe',
+        /Cambiar PIN/.test(ficha) && /Desactivar/.test(ficha) && /Borrar/.test(ficha)
+        && web.bytesUtf8(ficha) <= config.WEB_MAX_BYTES, web.bytesUtf8(ficha));
+    check('el estilo va aparte', /text\/css/.test(pedir('/estilo.css').headers.v));
+    check('cuenta bytes UTF-8, no caracteres', web.bytesUtf8('añ€') === 6);
+    check('una respuesta que no cabe se sustituye por un aviso corto',
+        /no cabe/.test(pedir('/eco', 'GET', 'x=' + 'a'.repeat(0)).body) === false
+        && (() => { const o = config.WEB_MAX_BYTES; config.WEB_MAX_BYTES = 100;
+            const b = pedir('/entrar', 'POST', 'pin=0').body; config.WEB_MAX_BYTES = o; return /no cabe/.test(b); })());
+    check('/tam mide el tope a propósito', pedir('/tam', 'GET', 'n=5000').body.length === 5000);
+
+    check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
+    check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
+    delete mock.pedk.net.http.Response;
+    check('sin Response en el firmware no se engancha y lo dice', !web.instalar().ok);
+}
+
 hablar();
 console.log('\n' + ok + ' bien, ' + fallos + ' mal\n');
 if (fallos > 0) {

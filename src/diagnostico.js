@@ -21,6 +21,7 @@ import * as retencion from './retencion.js';
 import * as store from './store.js';
 import * as vigia from './vigia.js';
 import * as explorar from './explorar.js';
+import * as web from './web.js';
 
 const LINEAS_POR_PAGINA = 9;
 
@@ -79,6 +80,7 @@ export function informe() {
     }
 
     out.push(...vigia.informe());
+    out.push(...web.informe());
 
     const ret = retencion.disponible();
     out.push('Retencion: ' + ret.detalle);
