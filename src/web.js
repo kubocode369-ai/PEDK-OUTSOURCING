@@ -20,6 +20,7 @@ import * as store from './store.js';
 import * as acciones from './acciones.js';
 import * as cerradura from './cerradura.js';
 import * as respaldo from './respaldo.js';
+import * as capacidad from './capacidad.js';
 
 const BASE = '/pedk/app_notify/' + config.WEB_APP;
 /** Clave del freno de intentos: compartida con nadie, sólo la web. */
@@ -463,7 +464,8 @@ function paginaAjustes(token, msg) {
         + '<p>' + boton('desbloquear', 'Desbloquear equipo', '¿Desbloquear todo y apagar el bloqueo?') + '</p>')
         + '</div><div class="caja">' + enlace(token, 'copia', '', 'Copia de seguridad') + ' · '
         + enlace(token, 'pinadmin', '', 'PIN de administrador') + ' · '
-        + enlace(token, 'respaldo', '', 'Respaldo automático (PC)') + '</div>');
+        + enlace(token, 'respaldo', '', 'Respaldo automático (PC)') + ' · '
+        + enlace(token, 'capacidad', '', 'Capacidad') + '</div>');
 }
 
 function paginaPinAdmin(token, msg) {
@@ -709,6 +711,27 @@ const COPIA_SUBIR_JS = 'function $(i){return document.getElementById(i)}'
     + '}).catch(function(x){b.disabled=false;e.textContent="Error de red: "+x})}p(0)})}';
 
 /* ------------------------------------------------------------------ */
+/* Capacidad                                                            */
+/* ------------------------------------------------------------------ */
+
+function paginaCapacidad(token, msg) {
+    const e = capacidad.estadoPrueba();
+    const filas = e.pasos.map((r) => '<tr><td>' + r.n + '</td><td>' + (r.kb === null ? '-' : r.kb + ' KB')
+        + '</td><td>' + (r.msGuardar === null ? '-' : r.msGuardar + ' ms') + '</td><td>'
+        + (r.msLeer === null ? '-' : r.msLeer + ' ms') + '</td><td>' + (r.ok ? 'bien' : escapar(r.error || 'falla'))
+        + '</td></tr>').join('');
+    return documento('Capacidad', enlace(token, 'ajustes', '', 'Volver') + ' · ' + enlace(token, 'capacidad', '', 'Actualizar'),
+        mensajeHtml(msg) + '<div class="caja"><p>Mide cuántos usuarios aguanta la impresora: guarda datos de prueba '
+        + 'cada vez más grandes (en un fichero aparte, sus datos no se tocan) y cronometra. Mientras dura (≈1 min) '
+        + 'la impresora puede ir lenta: que nadie imprima.</p>'
+        + (e.enCurso ? '<p><b>En curso…</b> pulse Actualizar.</p>'
+            : formulario(token, 'capacidad', '<button>Empezar la prueba</button>'))
+        + (e.fin ? '<p><b>Resultado:</b> ' + escapar(e.fin) + '</p>' : '')
+        + (filas ? '<table><tr><td>Usuarios</td><td>Tamaño</td><td>Guardar</td><td>Leer</td><td></td></tr>' + filas + '</table>' : '')
+        + '</div>');
+}
+
+/* ------------------------------------------------------------------ */
 /* Rutas                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -790,6 +813,16 @@ export function atenderRuta(p, ahora) {
     }
     if (p.ruta === '/subir' && cambia) {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: trozoSubida(token, d) };
+    }
+    if (p.ruta === '/capacidad') {
+        if (cambia) {
+            const o = acciones.impresoraOcupada();
+            const msg = o ? { ok: false, texto: o.texto }
+                : capacidad.empezar() ? { ok: true, texto: 'Prueba en marcha. Pulse Actualizar dentro de un minuto.' }
+                    : { ok: false, texto: 'No se pudo empezar: ' + (capacidad.estadoPrueba().fin || 'ya está en curso') };
+            return html(paginaCapacidad(token, anotar(msg)));
+        }
+        return html(paginaCapacidad(token));
     }
     if (p.ruta === '/ajustes') {
         return html(paginaAjustes(token));

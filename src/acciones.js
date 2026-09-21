@@ -42,6 +42,11 @@ function ocupada() {
         : null;
 }
 
+/** Para lo que no debe hacerse con alguien imprimiendo (p. ej. la prueba de capacidad). */
+export function impresoraOcupada() {
+    return ocupada();
+}
+
 export function fijarBloqueo(encender) {
     const a = store.ajustes();
     if (!!encender === !!a.bloqueoActivo) {

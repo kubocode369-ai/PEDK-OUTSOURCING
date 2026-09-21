@@ -1314,6 +1314,37 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('subir pide sesión', !/^(SIGUE|OK|ERROR)/.test(pedir('/subir', 'POST', 'u=x&i=0&t=1&d=e30').body));
     check('base64url con acentos y emoji', web.desdeBase64url(Buffer.from('añ€😀', 'utf8').toString('base64url')) === 'añ€😀');
 
+    // Prueba de capacidad: datos de prueba en ficheros propios, sin tocar los reales.
+    const capacidad = await import('./.build/capacidad.mjs');
+    capacidad._pausa(0);
+    const reales = JSON.stringify(store.respaldo().usuarios);
+    const m100 = capacidad.medirPaso(100);
+    check('un paso guarda, relee y cronometra', m100.ok && m100.kb > 0 && m100.msGuardar !== null, JSON.stringify(m100));
+    check('los datos de prueba tienen el tamaño de los reales (nombre, cédula, contadores)',
+        (() => { const d = capacidad.datosFalsos(10); return d.usuarios[0].cedula && d.usuarios[0].nombreCompleto && d.contadores[d.usuarios[0].nombre]; })());
+    sesion.abrir('jperez', '1234');
+    resp = pedir('/capacidad', 'POST', 's=' + sN);
+    check('con alguien usando la impresora no empieza', /usando la impresora/.test(resp.body) && !capacidad.estadoPrueba().enCurso);
+    sesion.cerrar('prueba');
+    resp = pedir('/capacidad', 'POST', 's=' + sN);
+    check('empieza en segundo plano y contesta al momento', /en marcha/.test(resp.body) && capacidad.estadoPrueba().enCurso);
+    check('no se puede lanzar dos veces', /No se pudo empezar/.test(pedir('/capacidad', 'POST', 's=' + sN).body));
+    for (let i = 0; i < 100 && capacidad.estadoPrueba().enCurso; i++) await esperar(20);
+    const cap = capacidad.estadoPrueba();
+    check('recorre todos los pasos y termina', !cap.enCurso && cap.pasos.length === capacidad.PASOS.length && /máximo probado/.test(cap.fin), cap.fin);
+    check('no toca los datos reales', JSON.stringify(store.respaldo().usuarios) === reales);
+    check('deja pequeños sus ficheros de prueba', JSON.stringify(Object.load('/storage/prueba-capacidad.json')) === '{}');
+    const pc2 = pedir('/capacidad', 'GET', 's=' + sN).body;
+    check('la página de resultados cabe con todos los pasos', web.bytesUtf8(pc2) <= config.WEB_MAX_BYTES && /5000<\/td>/.test(pc2), web.bytesUtf8(pc2));
+    check('ajustes sigue cabiendo con el enlace nuevo', web.bytesUtf8(pedir('/ajustes', 'GET', 's=' + sN).body) <= config.WEB_MAX_BYTES);
+    const lento = Object.save;
+    Object.save = (f, o) => { if (o && o.usuarios && o.usuarios.length >= 1000) throw new Error('sin espacio'); return lento(f, o); };
+    capacidad.empezar();
+    for (let i = 0; i < 100 && capacidad.estadoPrueba().enCurso; i++) await esperar(20);
+    Object.save = lento;
+    check('se para en el primer fallo y dice dónde', /falló con 1000 usuarios: sin espacio/.test(capacidad.estadoPrueba().fin)
+        && capacidad.estadoPrueba().pasos.length === 4, capacidad.estadoPrueba().fin);
+
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
     delete mock.pedk.net.http.Response;
