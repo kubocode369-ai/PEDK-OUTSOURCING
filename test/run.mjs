@@ -1148,6 +1148,118 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     pedir('/respaldo', 'POST', 's=' + sA + '&a=apagar');
     check('apagar el respaldo', !store.ajustes().respaldoIp);
 
+    // Copia de seguridad desde el navegador: descargar de una impresora y subir a otra vacía.
+    const navegador = (sesionTok, archivo) => {
+        const env = { bajado: null, estado: { textContent: '', className: '' }, posts: [] };
+        env.ctx = {
+            fetch: (url, o) => {
+                const [ruta, q] = url.split('?');
+                if (o && o.method === 'POST') env.posts.push(o.body);
+                const b = o && o.method === 'POST' ? pedir('/' + ruta, 'POST', o.body).body : pedir('/' + ruta, 'GET', q).body;
+                return Promise.resolve({ text: () => Promise.resolve(b) });
+            },
+            Blob: function (trozos) { this.texto = trozos.join(''); },
+            URL: { createObjectURL: (b) => b },
+            document: {
+                createElement: () => ({ click() { env.bajado = this.href.texto; }, remove() {} }),
+                body: { appendChild() {} },
+                getElementById: (id) => (id === 'f' ? { files: archivo ? [archivo] : [] } : env.estado),
+            },
+            alert: (m) => { env.estado.textContent = 'ALERTA ' + m; },
+            confirm: () => true,
+        };
+        const js = pedir('/copia-bajar.js').body + ';' + pedir('/copia-subir.js').body;
+        env.correr = (llamada) => new Function(...Object.keys(env.ctx), js + ';' + llamada)(...Object.values(env.ctx));
+        env.boton = '{getAttribute:()=>"' + sesionTok + '",disabled:false}';
+        return env;
+    };
+    check('los scripts de la copia caben', ['/copia-bajar.js', '/copia-subir.js'].every((r) =>
+        /^function/.test(pedir(r).body) && web.bytesUtf8(pedir(r).body) <= config.WEB_MAX_BYTES));
+
+    // Impresora "de antes": configurada y con datos, con acentos y bastante registro.
+    store.agregarUsuario('nono', '2468', { nombreCompleto: 'Íñigo Núñez 😀', cedula: '123456789' });
+    for (let i = 0; i < 40; i++) store.contar('jperez', { tipo: 'PRINT', paginas: 2, doc: 'Informe año ' + i + '.pdf' });
+    store.contar('nono', { tipo: 'COPY', paginas: 5 });
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=bloqueo');
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=copia');
+    pedir('/respaldo', 'POST', 's=' + sA + '&a=ip&ip=192.168.0.100');
+    const antes = JSON.parse(JSON.stringify(store.respaldo()));
+    check('la impresora de antes está en retención con bloqueo', antes.ajustes.modo === 'retencion' && antes.ajustes.bloqueoActivo);
+    check('la página de copia cabe', web.bytesUtf8(pedir('/copia', 'GET', 's=' + sA).body) <= config.WEB_MAX_BYTES);
+
+    const nav1 = navegador(sA);
+    let partesCopia = 0;
+    const fetchOriginal = nav1.ctx.fetch;
+    nav1.ctx.fetch = (url, o) => { partesCopia++; return fetchOriginal(url, o); };
+    nav1.correr('bajarCopia(' + nav1.boton + ')');
+    await esperar(50);
+    const fichero = nav1.bajado;
+    check('descarga la copia completa en varias partes', !!fichero && partesCopia > 1
+        && JSON.stringify(JSON.parse(fichero).usuarios) === JSON.stringify(antes.usuarios)
+        && JSON.stringify(JSON.parse(fichero).contadores) === JSON.stringify(antes.contadores), partesCopia + ' partes');
+    check('y cada parte cabe en lo que la impresora puede enviar', (() => {
+        let d = 0; let mayorParte = 0;
+        for (;;) {
+            const b = pedir('/copia.json', 'GET', 's=' + sA + '&desde=' + d).body;
+            mayorParte = Math.max(mayorParte, web.bytesUtf8(b));
+            const m = /^SIGUIENTE;(-?\d+)\n/.exec(b);
+            if (!m || +m[1] < 0) break;
+            d = +m[1];
+        }
+        return mayorParte <= config.WEB_MAX_BYTES;
+    })());
+    check('la copia pide sesión', !/^SIGUIENTE/.test(pedir('/copia.json', 'GET', 'desde=0').body));
+
+    // Impresora "reinstalada": vacía, PIN de fábrica.
+    equipo({ retencion: { KuboC: [] } });
+    web._reiniciar();
+    web.instalar();
+    const sN = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+    const nav2 = navegador(sN, { name: 'copia.json', text: () => Promise.resolve(fichero) });
+    nav2.correr('subirCopia(' + nav2.boton + ')');
+    await esperar(100);
+    check('sube la copia y dice que fue bien', nav2.estado.className === 'ok' && /Copia restaurada/.test(nav2.estado.textContent), nav2.estado.textContent);
+    const mayorPost = Math.max(...nav2.posts.map((b) => b.length));
+    check('en varios envíos, todos muy por debajo de lo que cuelga la impresora (502 medido bueno)',
+        nav2.posts.length > 3 && mayorPost <= 320, nav2.posts.length + ' envíos, el mayor ' + mayorPost);
+    const despues = store.respaldo();
+    check('vuelven los usuarios con su PIN, nombre y cédula (con acentos y emoji)',
+        store.validarUsuario('nono', '2468').ok && store.validarUsuario('jperez', '1234').ok
+        && store.usuarios().filter((u) => u.nombre === 'nono')[0].nombreCompleto === 'Íñigo Núñez 😀');
+    check('vuelven los contadores y el registro', JSON.stringify(despues.contadores) === JSON.stringify(antes.contadores)
+        && despues.registro.length === antes.registro.length);
+    check('vuelven los ajustes y el PIN de administrador', despues.ajustes.bloquearCopia === true
+        && despues.ajustes.respaldoIp === '192.168.0.100' && despues.ajustes.huellaAdmin === antes.ajustes.huellaAdmin);
+    check('modo y bloqueo se aplican de verdad, como en el panel',
+        store.ajustes().modo === 'retencion' && store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === false);
+
+    // Lo que no debe pasar.
+    store.contar('jperez', { tipo: 'PRINT', paginas: 100 });
+    const conCifras = JSON.stringify(store.contadores());
+    const nav3 = navegador(sN, { name: 'copia.json', text: () => Promise.resolve(fichero) });
+    nav3.correr('subirCopia(' + nav3.boton + ')');
+    await esperar(100);
+    check('con contadores ya en marcha no los pisa', JSON.stringify(store.contadores()) === conCifras
+        && /se conservan los actuales/.test(nav3.estado.textContent), nav3.estado.textContent);
+    const nav4 = navegador(sN, { name: 'x.json', text: () => Promise.resolve('no soy json') });
+    nav4.correr('subirCopia(' + nav4.boton + ')');
+    await esperar(20);
+    check('un fichero que no es JSON se rechaza sin enviar nada', nav4.posts.length === 0 && /no es una copia/.test(nav4.estado.textContent));
+    const nav5 = navegador(sN, { name: 'x.json', text: () => Promise.resolve('{"app":"otra","usuarios":[]}') });
+    nav5.correr('subirCopia(' + nav5.boton + ')');
+    await esperar(50);
+    check('una copia de otra app se rechaza', nav5.estado.className === 'error' && /otra app/.test(nav5.estado.textContent), nav5.estado.textContent);
+    const vieja = JSON.stringify({ formato: 1, app: 'impresion-pin-BM5220ADW', usuarios: [{ nombre: 'vieja', huella: store.huella('vieja', '5555'), activo: true }] });
+    const nav6 = navegador(sN, { name: 'ultimo.json', text: () => Promise.resolve(vieja) });
+    nav6.correr('subirCopia(' + nav6.boton + ')');
+    await esperar(50);
+    check('vale una copia de antes del cambio de nombre (la del servidor del PC)', store.validarUsuario('vieja', '5555').ok, nav6.estado.textContent);
+    check('un trozo desordenado se rechaza', /^ERROR;/.test(pedir('/subir', 'POST', 's=' + sN + '&u=x&i=3&t=5&d=abc').body));
+    check('un trozo demasiado grande se rechaza', /^ERROR;/.test(pedir('/subir', 'POST', 's=' + sN + '&u=x&i=0&t=1&d=' + 'a'.repeat(config.WEB_TROZO_SUBIDA + 1)).body));
+    check('subir pide sesión', !/^(SIGUE|OK|ERROR)/.test(pedir('/subir', 'POST', 'u=x&i=0&t=1&d=e30').body));
+    check('base64url con acentos y emoji', web.desdeBase64url(Buffer.from('añ€😀', 'utf8').toString('base64url')) === 'añ€😀');
+
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
     delete mock.pedk.net.http.Response;

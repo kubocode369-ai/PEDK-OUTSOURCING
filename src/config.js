@@ -86,9 +86,11 @@ export const config = {
     /**
      * PANEL WEB en la propia impresora: http://<ip>/pedk/app_notify/<WEB_APP>.
      * Tiene que ser el `name` del package.json: el firmware enruta por él (medido el
-     * 21-09-2026; con otro nombre contesta "app name is not find!!!").
+     * 21-09-2026; con otro nombre contesta "app name is not find!!!"). El prefijo
+     * /pedk/app_notify/ lo pone el firmware y no se puede cambiar. Era
+     * 'impresion-pin-BM5220ADW'; se acortó para que la dirección sea fácil de dar.
      */
-    WEB_APP: 'impresion-pin-BM5220ADW',
+    WEB_APP: 'impresion',
     /** Minutos sin usar la web tras los que hay que volver a poner el PIN. */
     WEB_SESION_MS: 15 * 60 * 1000,
     /**
@@ -98,4 +100,12 @@ export const config = {
      * margen por si el firmware cuenta algo más que el cuerpo.
      */
     WEB_MAX_BYTES: 1800,
+    /**
+     * Lo que la impresora RECIBE aguanta mucho menos (medido el 21-09-2026): un POST de
+     * 502 bytes llega y uno de 1002 cuelga la web hasta reiniciar. La copia de
+     * seguridad se sube en trozos de estos caracteres (más ~50 del resto del envío).
+     */
+    WEB_TROZO_SUBIDA: 240,
+    /** 500 trozos = ~90 KB de copia: de sobra (la copia real ronda 1-10 KB). */
+    WEB_SUBIDA_MAX_TROZOS: 500,
 };

@@ -150,10 +150,10 @@ Si alguien sobra, se quita desde Ajustes → Usuarios → Quitar.
 ```bash
 npm test            # recorrido completo contra un pedk simulado; SIEMPRE antes de firmar
 npm run build       # vite build + pedk-build
-npm run sign:dev    # -> build/impresion-pin-BM5220ADW_signed.tar
+npm run sign:dev    # -> build/impresion_signed.tar
 ```
 
-Instalar `build/impresion-pin-BM5220ADW_signed.tar` con **PEDK Installer**.
+Instalar `build/impresion_signed.tar` con **PEDK Installer**.
 
 - `node_modules/` se copió del agente de CloudPrint (mismo SDK `pedk-1.00.012`); `npm install`
   también sirve si hay red.

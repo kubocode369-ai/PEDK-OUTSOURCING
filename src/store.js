@@ -380,7 +380,7 @@ export function respaldo() {
     const d = cargar();
     return {
         formato: 1,
-        app: 'impresion-pin-BM5220ADW',
+        app: config.WEB_APP,
         revision,
         usuarios: d.usuarios,
         contadores: d.contadores,
@@ -445,6 +445,60 @@ export function restaurarUsuarios(entrada) {
         guardar();
     }
     return { ok: creados + actualizados > 0, creados, actualizados, malos };
+}
+
+/** Nombres con los que se ha llamado la app: un respaldo de antes del cambio sigue valiendo. */
+const NOMBRES_APP = [config.WEB_APP, 'impresion-pin-BM5220ADW'];
+
+/**
+ * Restaura una COPIA COMPLETA (lo que devuelve respaldo()): usuarios con su PIN, nombre
+ * y cédula, contadores, registro y ajustes. Pensado para después de reinstalar, cuando
+ * la impresora está vacía y hay que dejarla como estaba.
+ *
+ * Reglas, para que un fichero viejo no estropee nada:
+ *  - usuarios: como restaurarUsuarios, crea y actualiza pero NUNCA borra;
+ *  - contadores y registro: sólo si en la impresora aún no hay (si ya se ha contado
+ *    algo, mezclar cifras de dos momentos daría totales falsos);
+ *  - ajustes: se copian los simples (copia, minutos, PIN de administrador, IP del
+ *    respaldo). El modo y el bloqueo NO: tocan los interruptores del equipo y los
+ *    aplica quien llama con acciones.js, igual que el panel. Se devuelven en `aplicar`.
+ *
+ * @returns {{ok: boolean, error?: string, usuarios?: object, contadores?: boolean,
+ *            aplicar?: {modo: string, bloqueoActivo: boolean}}}
+ */
+export function restaurarTodo(copia) {
+    if (!copia || typeof copia !== 'object' || !Array.isArray(copia.usuarios)) {
+        return { ok: false, error: 'El fichero no es una copia de esta app' };
+    }
+    if (copia.app && NOMBRES_APP.indexOf(copia.app) < 0) {
+        return { ok: false, error: 'El fichero es de otra app (' + String(copia.app).slice(0, 30) + ')' };
+    }
+    const usuarios = copia.usuarios.length
+        ? restaurarUsuarios(copia)
+        : { ok: true, creados: 0, actualizados: 0, malos: 0 };
+    const d = cargar();
+    let contadores = false;
+    if (Object.keys(d.contadores).length === 0 && copia.contadores && typeof copia.contadores === 'object') {
+        Object.keys(copia.contadores).forEach((quien) => {
+            const c = copia.contadores[quien] || {};
+            const n = (v) => Math.max(0, Math.floor(Number(v)) || 0);
+            d.contadores[String(quien).slice(0, 40)] = {
+                impresiones: n(c.impresiones), paginas: n(c.paginas), copias: n(c.copias), paginasCopia: n(c.paginasCopia),
+            };
+        });
+        contadores = Object.keys(d.contadores).length > 0;
+    }
+    if (d.registro.length === 0 && Array.isArray(copia.registro)) {
+        d.registro = copia.registro.filter((r) => r && typeof r === 'object').slice(0, config.REGISTRO_MAX);
+    }
+    const a = normalizar({ usuarios: [], ajustes: copia.ajustes }).ajustes;
+    const aj = d.ajustes;
+    aj.bloquearCopia = a.bloquearCopia;
+    aj.minutosSesion = a.minutosSesion;
+    aj.huellaAdmin = a.huellaAdmin;
+    aj.respaldoIp = a.respaldoIp && /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(a.respaldoIp) ? a.respaldoIp : null;
+    guardar();
+    return { ok: true, usuarios, contadores, aplicar: { modo: a.modo, bloqueoActivo: a.bloqueoActivo } };
 }
 
 /** Solo para las pruebas: olvida la copia en memoria y relee del equipo. */

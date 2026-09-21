@@ -1,7 +1,7 @@
 /**
  * Panel de administración servido por la PROPIA impresora, como la web de Pantum:
  *
- *     http://<ip>/pedk/app_notify/impresion-pin-BM5220ADW
+ *     http://<ip>/pedk/app_notify/impresion
  *
  * Medido el 21-09-2026: el firmware llama a `pedk.net.http.receiveData` con cada
  * petición cuya ruta empieza por /pedk/app_notify/<nombre de la app> (el `name` del
@@ -423,8 +423,9 @@ function paginaAjustes(token, msg) {
         + boton('copia', a.bloquearCopia ? 'Dejar libre' : 'Pedir PIN') + '</p>'
         + '<p>Sesión: <select name="minutos">' + minutos + '</select> min ' + boton('minutos', 'Guardar') + '</p>'
         + '<p>' + boton('desbloquear', 'Desbloquear equipo', '¿Desbloquear todo y apagar el bloqueo?') + '</p>')
-        + '</div><div class="caja">' + enlace(token, 'pinadmin', '', 'Cambiar PIN de administrador') + ' · '
-        + enlace(token, 'respaldo', '', 'Respaldo') + '</div>');
+        + '</div><div class="caja">' + enlace(token, 'copia', '', 'Copia de seguridad') + ' · '
+        + enlace(token, 'pinadmin', '', 'PIN de administrador') + ' · '
+        + enlace(token, 'respaldo', '', 'Respaldo automático (PC)') + '</div>');
 }
 
 function paginaPinAdmin(token, msg) {
@@ -443,7 +444,7 @@ function paginaRespaldo(token, msg) {
     const u = e.ultimo;
     const boton = (valor, texto, confirmar) => '<button name="a" value="' + valor + '"'
         + (confirmar ? ' onclick="return confirm(\'' + confirmar + '\')"' : '') + '>' + texto + '</button> ';
-    return documento('Respaldo', enlace(token, 'ajustes', '', 'Volver') + ' · ' + enlace(token, 'respaldo', '', 'Actualizar'),
+    return documento('Respaldo automático', enlace(token, 'ajustes', '', 'Volver') + ' · ' + enlace(token, 'respaldo', '', 'Actualizar'),
         mensajeHtml(msg) + '<div class="caja"><p>PC: <b>' + (e.destino ? escapar(e.destino) + ':' + config.RESPALDO_PUERTO : 'ninguno (apagado)')
         + '</b><br>Último: <span class="' + (u.ok === null ? '' : u.ok ? 'ok' : 'error') + '">'
         + escapar((u.cuando ? u.cuando + ' · ' : '') + u.detalle) + '</span>'
@@ -499,6 +500,177 @@ function hacerRespaldo(d) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Copia de seguridad desde el navegador (sin servidor en el PC)        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * DESCARGAR: la copia no cabe en una respuesta (tope de salida, ~2 KB), así que el
+ * navegador la pide por partes, como el CSV. La copia se congela al pedir la primera
+ * parte: si entre parte y parte se contara un trabajo, las piezas no casarían.
+ *
+ * SUBIR: el tope de ENTRADA es mucho menor. Medido el 21-09-2026: un POST de 502 bytes
+ * llega; uno de 1002 CUELGA la web hasta reiniciar la impresora (no falla limpio: el
+ * firmware se queda colgado antes de que la app lo vea, así que la app no puede
+ * protegerse). Por eso el navegador manda la copia en trozos de config.WEB_TROZO_SUBIDA
+ * caracteres, en base64url (sin caracteres que haya que escapar: el tamaño es exacto).
+ */
+
+/** token -> copia congelada (texto JSON) mientras se descarga. */
+const descargas = new Map();
+/** token -> {id, total, partes[]} mientras se sube. */
+const subidas = new Map();
+
+export function parteCopia(token, desde) {
+    const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
+    if (i0 === 0 || !descargas.has(token)) {
+        descargas.set(token, JSON.stringify(store.respaldo()));
+    }
+    const texto = descargas.get(token);
+    // Se corta por caracteres, contando bytes: un acento no puede quedar partido.
+    let i = i0;
+    let bytes = 0;
+    const max = config.WEB_MAX_BYTES - 40;
+    while (i < texto.length) {
+        const b = bytesUtf8(texto.charAt(i));
+        if (bytes + b > max) break;
+        bytes += b;
+        i++;
+    }
+    if (i >= texto.length) {
+        descargas.delete(token);
+        return 'SIGUIENTE;-1\n' + texto.slice(i0);
+    }
+    return 'SIGUIENTE;' + i + '\n' + texto.slice(i0, i);
+}
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** base64url -> texto UTF-8. Este motor no trae atob ni TextDecoder. */
+export function desdeBase64url(t) {
+    const bytes = [];
+    let acc = 0;
+    let bits = 0;
+    for (let i = 0; i < t.length; i++) {
+        const v = B64.indexOf(t.charAt(i));
+        if (v < 0) throw new Error('carácter no válido en la copia');
+        acc = (acc << 6) | v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            bytes.push((acc >> bits) & 0xff);
+        }
+    }
+    let s = '';
+    for (let i = 0; i < bytes.length;) {
+        const c = bytes[i];
+        let cp;
+        let n;
+        if (c < 0x80) { cp = c; n = 1; }
+        else if (c >= 0xf0) { cp = c & 0x07; n = 4; }
+        else if (c >= 0xe0) { cp = c & 0x0f; n = 3; }
+        else { cp = c & 0x1f; n = 2; }
+        for (let k = 1; k < n; k++) cp = (cp << 6) | (bytes[i + k] & 0x3f);
+        i += n;
+        s += cp > 0xffff
+            ? String.fromCharCode(0xd800 + ((cp - 0x10000) >> 10), 0xdc00 + ((cp - 0x10000) & 0x3ff))
+            : String.fromCharCode(cp);
+    }
+    return s;
+}
+
+/** Aplica una copia completa: datos con store, modo y bloqueo con acciones (como el panel). */
+function aplicarCopia(copia) {
+    const r = store.restaurarTodo(copia);
+    if (!r.ok) {
+        return { ok: false, texto: r.error };
+    }
+    const partes = [];
+    const u = r.usuarios;
+    partes.push(u.creados + ' usuario(s) nuevos, ' + u.actualizados + ' actualizados'
+        + (u.malos ? ', ' + u.malos + ' no válidos' : ''));
+    partes.push(r.contadores ? 'contadores restaurados' : 'contadores: se conservan los actuales');
+    const m = acciones.fijarModo(r.aplicar.modo);
+    if (!m.ok) partes.push('modo: ' + m.texto);
+    const b = acciones.fijarBloqueo(r.aplicar.bloqueoActivo);
+    if (!b.ok) partes.push('bloqueo: ' + b.texto);
+    return { ok: m.ok && b.ok, texto: 'Copia restaurada: ' + partes.join('; ') + '.' };
+}
+
+/** Un trozo de la subida. Contesta "SIGUE;<i>", "OK;<texto>" o "ERROR;<texto>". */
+export function trozoSubida(token, d) {
+    const i = Math.floor(Number(d.i));
+    const total = Math.floor(Number(d.t));
+    const trozo = String(d.d || '');
+    if (!(total >= 1 && total <= config.WEB_SUBIDA_MAX_TROZOS) || !(i >= 0 && i < total)
+        || trozo.length > config.WEB_TROZO_SUBIDA || !/^[A-Za-z0-9_-]*$/.test(trozo)) {
+        subidas.delete(token);
+        return 'ERROR;Trozo no válido. Vuelva a intentarlo.';
+    }
+    if (i === 0) {
+        subidas.set(token, { id: String(d.u || ''), total, partes: [] });
+    }
+    const s = subidas.get(token);
+    if (!s || s.id !== String(d.u || '') || s.total !== total || s.partes.length !== i) {
+        subidas.delete(token);
+        return 'ERROR;La subida se desordenó. Vuelva a intentarlo.';
+    }
+    s.partes.push(trozo);
+    if (s.partes.length < total) {
+        return 'SIGUE;' + i;
+    }
+    subidas.delete(token);
+    let copia;
+    try {
+        copia = JSON.parse(desdeBase64url(s.partes.join('')));
+    } catch (e) {
+        return 'ERROR;El fichero no es una copia válida (' + String((e && e.message) || e).slice(0, 60) + ').';
+    }
+    const r = aplicarCopia(copia);
+    console.log('[web] copia subida: ' + r.texto);
+    return (r.ok ? 'OK;' : 'ERROR;') + r.texto;
+}
+
+function paginaCopia(token, msg) {
+    return documento('Copia de seguridad', enlace(token, 'ajustes', '', 'Volver'), mensajeHtml(msg)
+        + '<div class="caja"><p><b>Descargar</b> guarda en este PC una copia con usuarios, PIN, nombre, cédula, '
+        + 'contadores y ajustes.</p><button data-s="' + token + '" onclick="bajarCopia(this)">Descargar copia</button></div>'
+        + '<div class="caja"><p><b>Subir</b> deja la impresora como estaba en esa copia (p. ej. tras reinstalar). '
+        + 'No borra a nadie.</p><input type="file" id="f" accept=".json"> '
+        + '<button data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p></div>'
+        + '<p><small>La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como un documento '
+        + 'confidencial.</small></p><script src="copia-bajar.js"></script><script src="copia-subir.js"></script>');
+}
+
+/*
+ * El script del navegador. Descargar: igual que el CSV. Subir: lee el fichero,
+ * comprueba que es JSON, lo pasa a base64url y lo manda trozo a trozo, esperando
+ * cada respuesta antes del siguiente (el orden importa).
+ */
+const COPIA_BAJAR_JS = 'function bajarCopia(b){var s=b.getAttribute("data-s"),t="";b.disabled=true;'
+    + 'function p(n){fetch("copia.json?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
+    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){b.disabled=false;return alert("La sesión caducó, vuelva a entrar")}'
+    + 't+=x.slice(m[0].length);if(+m[1]>=0)return p(+m[1]);b.disabled=false;'
+    + 'var d=new Date(),f=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2),'
+    + 'a=document.createElement("a");a.href=URL.createObjectURL(new Blob([t],{type:"application/json"}));'
+    + 'a.download="copia-impresora-"+f+".json";document.body.appendChild(a);a.click();a.remove()'
+    + '}).catch(function(e){b.disabled=false;alert("No se pudo descargar: "+e)})}p(0)}';
+/* En dos ficheros: juntos pasan del tope de una respuesta. */
+const COPIA_SUBIR_JS = 'function $(i){return document.getElementById(i)}'
+    + 'function subirCopia(b){var s=b.getAttribute("data-s"),e=$("e"),f=$("f").files[0];'
+    + 'if(!f)return e.textContent="Elija primero el fichero de la copia.";'
+    + 'if(!confirm("¿Restaurar la impresora con "+f.name+"?"))return;'
+    + 'f.text().then(function(t){try{JSON.parse(t)}catch(x){return e.textContent="Ese fichero no es una copia (no es JSON)."}'
+    + 'var c=btoa(unescape(encodeURIComponent(t))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,""),'
+    + 'n=' + config.WEB_TROZO_SUBIDA + ',tot=Math.ceil(c.length/n),u=Math.random().toString(36).slice(2,10);b.disabled=true;'
+    + 'function p(i){e.textContent="Subiendo… "+Math.round(100*i/tot)+"%";'
+    + 'fetch("subir",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},'
+    + 'body:"s="+s+"&u="+u+"&i="+i+"&t="+tot+"&d="+c.substr(i*n,n)}).then(function(r){return r.text()}).then(function(x){'
+    + 'if(/^SIGUE;/.test(x))return p(i+1);b.disabled=false;'
+    + 'if(/^(OK|ERROR);/.test(x)){e.textContent=x.slice(x.indexOf(";")+1);e.className=x[0]=="O"?"ok":"error"}'
+    + 'else e.textContent="La sesión caducó, vuelva a entrar."'
+    + '}).catch(function(x){b.disabled=false;e.textContent="Error de red: "+x})}p(0)})}';
+
+/* ------------------------------------------------------------------ */
 /* Rutas                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -510,6 +682,10 @@ export function atenderRuta(p, ahora) {
 
     if (p.ruta === '/estilo.css') {
         return { codigo: 200, tipo: 'text/css; charset=utf-8', cuerpo: ESTILO };
+    }
+    if (p.ruta === '/copia-bajar.js' || p.ruta === '/copia-subir.js') {
+        return { codigo: 200, tipo: 'text/javascript; charset=utf-8',
+            cuerpo: p.ruta === '/copia-bajar.js' ? COPIA_BAJAR_JS : COPIA_SUBIR_JS };
     }
     if (p.ruta === '/csv.js') {
         return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CSV_JS };
@@ -561,6 +737,15 @@ export function atenderRuta(p, ahora) {
     }
     if (p.ruta === '/csv') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteCsv(d.desde) };
+    }
+    if (p.ruta === '/copia') {
+        return html(paginaCopia(token));
+    }
+    if (p.ruta === '/copia.json') {
+        return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteCopia(token, d.desde) };
+    }
+    if (p.ruta === '/subir' && cambia) {
+        return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: trozoSubida(token, d) };
     }
     if (p.ruta === '/ajustes') {
         return html(paginaAjustes(token));
