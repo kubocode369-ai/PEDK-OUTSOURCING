@@ -256,7 +256,7 @@ const PESTANAS = [['usuarios', 'Usuarios'], ['contadores', 'Contadores'], ['ajus
  */
 function documento(titulo, token, activa, cuerpo, volver) {
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
-        + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/">'
+        + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/"><link rel="icon" href="data:,">'
         + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="' + estatico('estilo.css') + '"></head><body>'
         + '<header><b>Impresión con PIN</b></header>'
         + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
