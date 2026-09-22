@@ -65,8 +65,6 @@ function vacio() {
             bloquearCopia: false,
             minutosSesion: config.MINUTOS_SESION_DEFECTO,
             huellaAdmin: null,
-            /** IP del PC que recibe el respaldo; null = respaldo apagado. */
-            respaldoIp: null,
         },
     };
 }
@@ -226,7 +224,6 @@ function normalizar(d) {
             base.ajustes.minutosSesion = a.minutosSesion;
         }
         base.ajustes.huellaAdmin = a.huellaAdmin || null;
-        base.ajustes.respaldoIp = typeof a.respaldoIp === 'string' && a.respaldoIp ? a.respaldoIp : null;
     }
     return base;
 }
@@ -371,8 +368,8 @@ export function revisionActual() {
 }
 
 /**
- * TODO lo guardado, para el respaldo. Incluye las huellas de los PIN: es lo que hace
- * que el respaldo sirva para restaurar, y también lo que lo vuelve sensible. Una
+ * TODO lo guardado, para la copia de seguridad. Incluye las huellas de los PIN: es lo
+ * que hace que la copia sirva para restaurar, y también lo que la vuelve sensible. Una
  * huella de un PIN de 4 dígitos se rompe probando las 10.000, así que este objeto
  * vale lo mismo que la lista de PIN en claro.
  */
@@ -500,7 +497,6 @@ export function restaurarTodo(copia) {
     aj.bloquearCopia = a.bloquearCopia;
     aj.minutosSesion = a.minutosSesion;
     aj.huellaAdmin = a.huellaAdmin;
-    aj.respaldoIp = a.respaldoIp && /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(a.respaldoIp) ? a.respaldoIp : null;
     guardar();
     return { ok: true, usuarios, contadores, aplicar: { modo: a.modo, bloqueoActivo: a.bloqueoActivo } };
 }

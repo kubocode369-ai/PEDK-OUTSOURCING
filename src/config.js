@@ -75,32 +75,6 @@ export const config = {
     VISTOS_MAX: 200,
 
     /**
-     * RESPALDO POR RED. El equipo no puede leer ni escribir en una flash USB (sólo
-     * enciende y apaga el puerto: medido el 17-09-2026), así que la única salida y
-     * entrada de datos es HTTP contra un PC de la misma red. Ver herramientas/
-     * respaldo-servidor.py, que atiende las dos rutas.
-     *
-     * Sólo se teclea la IP en el panel: el puerto y las rutas son fijos, porque el
-     * teclado de texto no tiene ':' ni '/'.
-     */
-    RESPALDO_PUERTO: 8099,
-    /** Donde se manda el respaldo completo (POST con el JSON). */
-    RESPALDO_RUTA_SUBIR: '/respaldo',
-    /** Gente NUEVA a dar de alta en bloque: la lista que escribe el administrador. */
-    RESPALDO_RUTA_USUARIOS: '/usuarios.json',
-    /**
-     * El ÚLTIMO respaldo, para devolver el equipo a como estaba. Va por una ruta
-     * distinta a propósito: restaurar y dar de alta gente nueva son cosas distintas, y
-     * mezclarlas en un solo botón hizo que una plantilla de ejemplo se diera de alta
-     * como si fueran usuarios de verdad.
-     */
-    RESPALDO_RUTA_RESTAURAR: '/restaurar.json',
-    /** Cada cuánto se intenta el respaldo automático, si hay algo nuevo que guardar. */
-    RESPALDO_AUTO_MS: 30 * 60 * 1000,
-    /** Margen tras arrancar antes del primer respaldo: que la red esté lista. */
-    RESPALDO_ESPERA_INICIAL_MS: 60 * 1000,
-
-    /**
      * PANEL WEB en la propia impresora: http://<ip>/pedk/app_notify/<WEB_APP>.
      * Tiene que ser el `name` del package.json: el firmware enruta por él (medido el
      * 21-09-2026; con otro nombre contesta "app name is not find!!!"). El prefijo

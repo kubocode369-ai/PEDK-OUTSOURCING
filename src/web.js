@@ -19,8 +19,6 @@ import { guard } from './guard.js';
 import * as store from './store.js';
 import * as acciones from './acciones.js';
 import * as cerradura from './cerradura.js';
-import * as respaldo from './respaldo.js';
-import * as capacidad from './capacidad.js';
 import { inflar } from './inflate.js';
 import { PLANTILLA_XLSX_B64 } from './plantilla.js';
 
@@ -377,8 +375,8 @@ const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAtt
 
 /*
  * CSV por partes: un CSV con mucha gente no cabe en una respuesta. El navegador pide
- * /csv?desde=0, luego desde=<siguiente>... y lo junta en un solo fichero. Mismo formato
- * que respaldos/contadores.csv del servidor de respaldo: ';' y BOM para Excel en español.
+ * /csv?desde=0, luego desde=<siguiente>... y lo junta en un solo fichero, con el formato
+ * que abre bien Excel en español: ';' y BOM (sin BOM se comen los acentos).
  * La primera línea de cada parte es "SIGUIENTE;<índice o -1>" y el navegador la quita.
  */
 export function parteCsv(desde) {
@@ -507,8 +505,7 @@ function paginaAjustes(token, msg) {
         + botonA('desbloquear', 'Desbloquear equipo', 'x', '¿Desbloquear todo?') + '</p>'))
         // Un formulario GET con un botón por destino: el token va una vez, no cuatro.
         + panel('Mantenimiento', '<form><input type="hidden" name="s" value="' + token + '">'
-            + [['copia', 'Copia de seguridad'], ['pinadmin', 'PIN admin'], ['respaldo', 'Respaldo al PC'],
-                ['capacidad', 'Capacidad']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
+            + [['copia', 'Copia de seguridad'], ['pinadmin', 'PIN de administrador']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
             + '</form>'));
 }
 
@@ -519,23 +516,6 @@ function paginaPinAdmin(token, msg) {
             + campo('Repita el PIN nuevo', campoPin('repetir')) + '<p><button class="p">Cambiar</button></p>')
         + '<p class="k">Vale para el panel de la impresora y para esta página. '
         + 'Si se olvida, sólo se recupera reinstalando la app (se pierden los datos).</p>'), ['ajustes', 'Ajustes']);
-}
-
-function paginaRespaldo(token, msg) {
-    const e = respaldo.estado();
-    const u = e.ultimo;
-    return documento('Respaldo automático', token, 'ajustes', mensajeHtml(msg) + panel('Estado', '<p>PC: <b>'
-        + (e.destino ? escapar(e.destino) + ':' + config.RESPALDO_PUERTO : 'ninguno (apagado)')
-        + '</b><br>Último: <span class="' + (u.ok === null ? '' : u.ok ? 'ok' : 'error') + '">'
-        + escapar((u.cuando ? u.cuando + ' · ' : '') + u.detalle) + '</span>'
-        + (e.enCurso ? '<br><b>En curso…</b>' : '') + '</p>' + enlace(token, 'respaldo', '', 'Actualizar', 'b'))
-        + panel('PC y acciones', formulario(token, 'respaldo', campo('IP del PC', '<input name="ip" size="15" value="'
-            + escapar(e.destino || '') + '">') + '<p>' + botonA('ip', 'Guardar', 'p') + botonA('apagar', 'Apagar') + '</p><p>'
-            + botonA('subir', 'Respaldar ahora')
-            + botonA('restaurar', 'Restaurar último', '', '¿Devolver los usuarios del último respaldo, con su PIN?')
-            + botonA('altas', 'Alta de usuarios.json', '', '¿Dar de alta a la gente de usuarios.json del PC?') + '</p>')
-            + '<p class="k">En el PC: Respaldo impresora.bat, abierto. Lleva los PIN: guárdelo como tal.</p>'),
-    ['ajustes', 'Ajustes']);
 }
 
 /** Acciones de /ajuste. */
@@ -549,35 +529,6 @@ function hacerAjuste(d) {
         case 'desbloquear': return acciones.desbloquearTodo();
         default: return { ok: false, texto: 'Acción desconocida.' };
     }
-}
-
-/**
- * Acciones de /respaldo. Van a otro equipo y no esperan: la página enseña "En curso" y
- * el resultado aparece al pulsar Actualizar.
- */
-function hacerRespaldo(d) {
-    if (d.a === 'ip') {
-        return respaldo.fijarDestino(String(d.ip || '').trim())
-            ? { ok: true, texto: d.ip ? 'IP guardada.' : 'Respaldo apagado.' }
-            : { ok: false, texto: 'IP no válida (ej. 192.168.0.10).' };
-    }
-    if (d.a === 'apagar') {
-        respaldo.fijarDestino(null);
-        return { ok: true, texto: 'Respaldo apagado.' };
-    }
-    if (!respaldo.destino()) {
-        return { ok: false, texto: 'Ponga primero la IP del PC.' };
-    }
-    if (d.a === 'subir') {
-        respaldo.exportar();
-    } else if (d.a === 'restaurar') {
-        respaldo.importar('restaurar');
-    } else if (d.a === 'altas') {
-        respaldo.importar('usuarios');
-    } else {
-        return { ok: false, texto: 'Acción desconocida.' };
-    }
-    return { ok: true, texto: 'Pedido al PC. Pulse Actualizar para ver cómo fue.' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -827,26 +778,6 @@ const SUBIR_JS = 'function subir(s,k,t,e,b){var z=typeof CompressionStream=="fun
     + 'else e.textContent="La sesión caducó, vuelva a entrar."'
     + '}).catch(function(x){b.disabled=false;e.textContent="Error de red: "+x})}p(0)})}';
 
-/* ------------------------------------------------------------------ */
-/* Capacidad                                                            */
-/* ------------------------------------------------------------------ */
-
-function paginaCapacidad(token, msg) {
-    const e = capacidad.estadoPrueba();
-    const filas = e.pasos.map((r) => '<tr><td>' + r.n + '</td><td>' + (r.kb === null ? '-' : r.kb + ' KB')
-        + '</td><td>' + (r.msGuardar === null ? '-' : r.msGuardar + ' ms') + '</td><td>'
-        + (r.msLeer === null ? '-' : r.msLeer + ' ms') + '</td><td>' + (r.ok ? 'bien' : escapar(r.error || 'falla'))
-        + '</td></tr>').join('');
-    return documento('Capacidad', token, 'ajustes', mensajeHtml(msg) + panel('Prueba',
-        '<p>Guarda datos de prueba crecientes aparte (los suyos no se tocan) y cronometra. ≈1 min: que nadie imprima.</p>'
-        + (e.enCurso ? '<p><b>En curso…</b> ' + enlace(token, 'capacidad', '', 'Actualizar', 'b') + '</p>'
-            : formulario(token, 'capacidad', '<button class="p">Empezar la prueba</button>'))
-        + (e.fin ? '<p><b>Resultado:</b> ' + escapar(e.fin) + '</p>' : '')
-        + (filas ? '<div class="t"><table><tr><th>Usuarios</th><th>Tamaño</th><th>Guardar</th><th>Leer</th><th></th></tr>'
-            + filas + '</table></div>' : '')), ['ajustes', 'Ajustes']);
-}
-
-/* ------------------------------------------------------------------ */
 /* Importar usuarios desde Excel                                        */
 /* ------------------------------------------------------------------ */
 
@@ -1032,24 +963,11 @@ export function atenderRuta(p, ahora) {
     if (p.ruta === '/subir' && cambia) {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: trozoSubida(token, d) };
     }
-    if (p.ruta === '/capacidad') {
-        if (cambia) {
-            const o = acciones.impresoraOcupada();
-            const msg = o ? { ok: false, texto: o.texto }
-                : capacidad.empezar() ? { ok: true, texto: 'Prueba en marcha. Pulse Actualizar dentro de un minuto.' }
-                    : { ok: false, texto: 'No se pudo empezar: ' + (capacidad.estadoPrueba().fin || 'ya está en curso') };
-            return html(paginaCapacidad(token, anotar(msg)));
-        }
-        return html(paginaCapacidad(token));
-    }
     if (p.ruta === '/ajustes') {
         return html(paginaAjustes(token));
     }
     if (p.ruta === '/pinadmin' && !cambia) {
         return html(paginaPinAdmin(token));
-    }
-    if (p.ruta === '/respaldo' && !cambia) {
-        return html(paginaRespaldo(token));
     }
     if (p.ruta === '/nuevo') {
         return html(paginaNuevo(token));
@@ -1111,9 +1029,6 @@ export function atenderRuta(p, ahora) {
     }
     if (p.ruta === '/ajuste' && cambia) {
         return html(paginaAjustes(token, anotar(deAccion(hacerAjuste(d)))));
-    }
-    if (p.ruta === '/respaldo' && cambia) {
-        return html(paginaRespaldo(token, anotar(hacerRespaldo(d))));
     }
     if (p.ruta === '/pinadmin' && cambia) {
         // Pide el PIN actual aunque ya haya sesión: una pestaña olvidada abierta no

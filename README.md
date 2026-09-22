@@ -67,14 +67,12 @@ fallos se frena 5 minutos; la sesión caduca a los 15 minutos sin uso.
 | **Importar Excel** | Plantilla `.xlsx`, vista previa fila a fila y alta de los válidos (ver abajo) |
 | **Contadores** | Todos los usuarios (también los que no imprimieron), "Sin identificar" y usuarios borrados. **CSV para Excel** y puesta a cero |
 | **Ajustes** | Modo, bloqueo, copia con PIN, duración de la sesión, desbloquear equipo, **PIN de administrador**. Misma lógica que el panel (`acciones.js`); no cambia el modo ni enciende el bloqueo con alguien dentro |
-| **Copia de seguridad** | **Descargar** y **Subir** desde el navegador, sin servidor |
-| **Respaldo automático (PC)** | El respaldo por red al servidor del PC (ver abajo) |
-| **Capacidad** | Mide cuántos usuarios aguanta el equipo (ficheros de prueba aparte) |
+| **Copia de seguridad** | **Descargar** y **Subir** desde el navegador. Los respaldos los hace el propio administrador |
 
 **Límites del firmware y cómo se esquivan** (medidos el 21-09-2026):
 
 - Una respuesta de más de **1998 bytes** no sale (página en blanco) y con ~4 KB la web se
-  cuelga hasta reiniciar. Toda respuesta queda por debajo de `WEB_MAX_BYTES` (1800): la
+  cuelga hasta reiniciar. Toda respuesta queda por debajo de `WEB_MAX_BYTES` (1900): la
   lista de usuarios, el CSV, la copia, la plantilla y los scripts grandes van **por
   partes** (`SIGUIENTE;n`), y el navegador los junta. Los scripts se cargan con
   `cargador()` y la ruta `/js`.
@@ -86,9 +84,15 @@ fallos se frena 5 minutos; la sesión caduca a los 15 minutos sin uso.
   la persona vuelve (`router.salioDeLaApp`).
 - La web va por **HTTP sin cifrar**: en la red de la oficina el PIN viaja en claro.
 
+**Diseño**: colores y paneles de la web de Pantum del equipo (rojo `#BB0033`, cabeceras
+rojas, borde gris), sin su logotipo. Responsive: en el móvil las pestañas se deslizan,
+cada usuario es una tarjeta y las tablas se desplazan dentro de su panel. Para verlo sin
+impresora: `npm test` y luego `node test/vista.mjs` → `http://localhost:8123/pedk/app_notify/impresion` (PIN `2580`).
+
 ## Cuántos usuarios
 
-Medido en el equipo (Ajustes → Capacidad, dos veces con el mismo resultado): cada usuario
+Medido en el equipo el 21-09-2026 (con una prueba de capacidad que se quitó después; dos
+veces, con el mismo resultado): cada usuario
 ocupa ~270 bytes con nombre, cédula y contadores, y **cada trabajo contado reescribe todos
 los datos**, ~0,85 s por cada 1000 usuarios (500 → 0,44 s; 1000 → 0,85 s; 3000 → 2,4 s).
 Mientras dura, el panel y el guardián esperan.
@@ -117,7 +121,7 @@ al log).
 | Panel web: rutas, formularios, topes de entrada y salida | **Comprobado** (21-09-2026, con curl contra el equipo) |
 | Copia de seguridad web, importación desde Excel | **Comprobado** en el equipo |
 | Fotocopia con PIN en retención + "Ir a copiar" + vuelta con `on_front` | **Comprobado** (22-09-2026, con log) |
-| Capacidad | **Medida** (ver arriba) |
+| Capacidad | **Medida** (ver "Cuántos usuarios") |
 
 ## Primera instalación (en este orden)
 
@@ -148,7 +152,7 @@ mano), **Explorar SDK** y el estado de la web.
    administrador, modo y bloqueo.
 
 Subir una copia **no borra a nadie**, y si la impresora ya tiene contadores en marcha no
-los pisa. Acepta también los `.json` del respaldo automático (`herramientas/respaldos/`),
+los pisa. Acepta también los `.json` del antiguo respaldo al PC (`herramientas/respaldos/`),
 incluso los de antes del cambio de nombre de la app (`impresion-pin-BM5220ADW`). Al pasar
 de aquella versión hay que **desinstalar primero la vieja**: con otro nombre, el equipo
 las trataría como dos apps y correrían dos guardianes.
@@ -183,60 +187,19 @@ La plantilla se regenera con `python herramientas/hacer-plantilla.py`, que escri
   así puede dejar funciones apagadas; reinstalar la app lo arregla.
 - El bloqueo viene **apagado de fábrica** y no se deja encender sin usuarios.
 - Los PIN se guardan como huella, no en claro; tras 5 intentos fallidos ese usuario queda
-  bloqueado 5 minutos. **La copia de seguridad y los respaldos llevan esas huellas**: un
+  bloqueado 5 minutos. **La copia de seguridad lleva esas huellas**: un
   PIN de 4 dígitos se rompe probando las 10.000 combinaciones, así que valen lo mismo que
-  la lista de PIN. Guardarlos como confidenciales.
+  la lista de PIN. Guardarla como confidencial.
 - El log del equipo (`Pedk1.log`) deja de grabar a los ~2 MiB (~41 min de uso): para
   diagnosticar, reiniciar y reproducir lo primero.
 
-## Respaldo automático al PC (opcional)
+## Respaldos
 
-Lo normal es la copia de seguridad desde la web. Esto es para quien quiera, además,
-**copias automáticas cada 30 minutos** en un PC de la oficina.
-
-La app **no puede leer ni escribir en una flash USB**: medido el 17-09-2026, del USB sólo
-se exponen interruptores (`setUsbHostEnable`, `FUNC_T_UDISK_*`), `pedk.usbh` no trae API
-de ficheros y `getFileList` no existe. Por eso el respaldo automático va por HTTP contra
-un PC de la misma red.
-
-En el PC: **doble clic en `herramientas/Respaldo impresora.bat`** (o, desde una consola,
-`python herramientas/respaldo-servidor.py`). Hace falta Python; se comprueba con
-`python --version`.
-
-**La primera vez Windows preguntará si permite el acceso**: hay que decir **sí, en redes
-privadas**. Si se deniega, la impresora no llega al PC y el respaldo falla siempre.
-
-**No dejes dos ventanas abiertas a la vez.** En Windows la segunda se ata al mismo
-puerto sin dar error, pero las peticiones se las queda la primera: parece que funciona y
-en realidad corre el programa viejo. El servidor ya lo detecta y avisa.
-
-La ventana imprime la IP que hay que poner, y hay que **dejarla abierta**. Para que
-arranque con el PC, se pone un acceso directo al `.bat` en la carpeta que abre
-`shell:startup` (Win+R). En la web: **Ajustes → Respaldo automático (PC)** → IP del PC
-(también desde el panel: Ajustes → Respaldo). A partir de ahí:
-
-| Botón | Qué hace | Fichero en el PC |
-|---|---|---|
-| **Respaldar ahora** | Manda todo: usuarios, huellas, contadores, ajustes | crea `respaldos/…` |
-| **Restaurar último respaldo** | Devuelve los usuarios, cada persona con su PIN | lee `respaldos/ultimo.json` |
-| **Alta de usuarios.json** | Alta en bloque de gente nueva, con el PIN que tú pongas | lee `usuarios.json` |
-
-Restaurar y dar de alta son **dos botones distintos a propósito**: con uno solo, la
-plantilla de ejemplo del servidor acabó dada de alta como si fueran usuarios de verdad.
-Ninguno **borra a nadie**. Si el PC está apagado, falla en silencio y reintenta.
-
-En el PC quedan:
-
-- `herramientas/respaldos/respaldo-AAAAMMDD-HHMMSS.json` — uno por respaldo, con fecha
-- `herramientas/respaldos/ultimo.json` — **el último respaldo BUENO**. Un respaldo que
-  llegue sin usuarios no lo pisa: si no, borrar gente para probar la restauración dejaba
-  el respaldo vacío justo cuando hacía falta
-- `herramientas/respaldos/contadores.csv` — quién imprimió cuánto, para Excel (todos los
-  usuarios, con nombre, cédula y estado). No lleva huellas: se puede pasar a contabilidad
-- `herramientas/usuarios.json` — la lista a importar (plantilla vacía a propósito)
-
-`herramientas/respaldos/` y `usuarios.json` están en `.gitignore`. El servidor no cifra ni
-pide credenciales: es para una red de oficina de confianza, no para exponerlo a internet.
+Los hace el administrador desde la web: **Ajustes → Copia de seguridad → Descargar
+copia**, y se guarda el fichero donde convenga. No hay respaldo automático: el antiguo
+respaldo por red a un PC (con un servidor en Python) se quitó el 22-09-2026 para no
+depender de un PC encendido. La app **no puede escribir en una flash USB** (medido el
+17-09-2026: del USB sólo se exponen interruptores), así que la copia sale por la web.
 
 ## Compilar, probar e instalar
 
@@ -260,26 +223,22 @@ Instalar `build/impresion_signed.tar` con **PEDK Installer** (antes, descargar l
 | Archivo | Qué hace |
 |---|---|
 | `src/app.js` | Pantallas del panel: inicio, usuario, PIN, sesión, documentos retenidos, "Ir a copiar"; arranque |
-| `src/ajustes.js` | Ajustes en el panel: usuarios, contadores, últimos trabajos, respaldo |
+| `src/ajustes.js` | Ajustes en el panel: usuarios, contadores, últimos trabajos, modo, bloqueo, PIN admin |
 | `src/acciones.js` | Modo, bloqueo, copia, duración y desbloqueo: lógica común al panel y a la web |
-| `src/web.js` | Panel web: login, usuarios, importar, contadores, ajustes, copia, capacidad; troceo de respuestas y subidas |
+| `src/web.js` | Panel web: login, usuarios, importar, contadores, ajustes, copia de seguridad; troceo de respuestas y subidas |
 | `src/inflate.js` | Descompresor deflate para las subidas comprimidas del navegador |
 | `src/plantilla.js` | Plantilla de Excel incrustada (generada por `herramientas/hacer-plantilla.py`) |
-| `src/capacidad.js` | Prueba de capacidad: cuántos usuarios aguanta el equipo |
 | `src/router.js` | Pantalla activa y repintado; no dibuja mientras se está fuera de la app |
 | `src/diagnostico.js` | Qué implementa el firmware + prueba de cerradura con un trabajo real |
 | `src/vigia.js` | Escucha los trabajos que llegan y el guardián: cancela toda impresión normal |
 | `src/explorar.js` | Vuelca la fuente del firmware y prueba la memoria (sólo diagnóstico) |
-| `src/respaldo.js` | Respaldo automático por red: exportar todo e importar usuarios |
 | `src/cerradura.js` | Interruptores del equipo, con relectura |
 | `src/sesion.js` | Sesión abierta y a quién se carga cada trabajo |
 | `src/historial.js` | Lee el historial y entrega los trabajos nuevos una sola vez |
 | `src/retencion.js` | Impresión confidencial (modo retención) |
 | `src/store.js` | Memoria del equipo: usuarios, huellas de PIN, contadores, registro, copia, importación, máximo |
 | `src/ui.js` | Widgets, teclado numérico y teclado de texto |
-| `herramientas/respaldo-servidor.py` | Servidor del respaldo automático en el PC |
-| `herramientas/Respaldo impresora.bat` | Lanzador de doble clic para Windows |
 | `herramientas/hacer-plantilla.py` | Genera la plantilla de Excel y la incrusta en la app |
 | `herramientas/plantilla-usuarios.xlsx` | La plantilla, para tenerla a mano |
 | `herramientas/Impresión con PIN.url` | Acceso directo al panel web |
-| `test/` | Simulador de `pedk`, pruebas y ficheros de Excel de prueba |
+| `test/` | Simulador de `pedk`, pruebas, ficheros de Excel de prueba y `vista.mjs` (vista previa del panel web sin impresora) |

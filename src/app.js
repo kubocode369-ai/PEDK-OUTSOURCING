@@ -28,7 +28,6 @@ import * as sesion from './sesion.js';
 import * as retencion from './retencion.js';
 import * as diagnostico from './diagnostico.js';
 import * as vigia from './vigia.js';
-import * as respaldo from './respaldo.js';
 import * as web from './web.js';
 import * as acciones from './acciones.js';
 import { abrirAjustes } from './ajustes.js';
@@ -600,9 +599,6 @@ function arrancar() {
         vigia.guardian(decidirGuardian);
     } catch (e) { console.log('[arranque] vigía: ' + (e && e.message)); }
     try {
-        respaldo.automatico();
-    } catch (e) { console.log('[arranque] respaldo: ' + (e && e.message)); }
-    try {
         web.instalar();
         // Un cambio de modo o de bloqueo hecho desde la web tiene que verse en el panel.
         acciones.alCambiar(() => {
@@ -628,8 +624,7 @@ function arrancar() {
     const a = store.ajustes();
     console.log('[arranque] listo · modo ' + a.modo + ' · bloqueo ' + (a.bloqueoActivo ? 'ON' : 'off')
         + ' · impresión desde PC ' + (bloqueado === null ? '¿?' : bloqueado ? 'bloqueada' : 'abierta')
-        + ' · usuarios ' + store.usuarios().length
-        + ' · respaldo ' + (respaldo.destino() || 'apagado'));
+        + ' · usuarios ' + store.usuarios().length);
 }
 
 try {

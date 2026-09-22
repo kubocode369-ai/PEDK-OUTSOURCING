@@ -109,134 +109,31 @@ hablar(); console.log('· Usuarios y PIN'); silenciar();
 }
 
 /* ------------------------------------------------------------------ */
-hablar(); console.log('· Respaldo por red: exportar e importar'); silenciar();
+hablar(); console.log('· Restaurar usuarios (lo que usa la copia de seguridad)'); silenciar();
 {
-    const respaldo = await import('./.build/respaldo.mjs');
-
     equipo();
-    respaldo.detener();
     store.agregarUsuario('ana', '1234');
-    store.contar('ana', { tipo: 'PRINT', paginas: 6 });
     hablar();
-    check('sin IP no se exporta', !respaldo.exportar() && /sin IP/.test(respaldo.estado().ultimo.detalle),
-        respaldo.estado().ultimo.detalle);
-    check('rechaza una IP mal escrita', !respaldo.fijarDestino('192.168.1') && !respaldo.fijarDestino('1.2.3.999')
-        && !respaldo.fijarDestino('mipc'));
-    check('acepta una IP buena', respaldo.fijarDestino('192.168.1.50') && respaldo.destino() === '192.168.1.50');
-    check('la IP sobrevive a un reinicio', (() => { store._recargar(); return respaldo.destino() === '192.168.1.50'; })());
+    const r = store.restaurarUsuarios({ usuarios: [
+        { nombre: 'luis', pin: '4321' },
+        { nombre: 'MARIA', pin: '1111' },
+        { nombre: 'ana', pin: '9999' },
+        { nombre: 'no valido!', pin: '1234' },
+        { nombre: 'sinpin' },
+        { nombre: 'pepe', huella: 'abc', activo: false },
+    ] });
+    check('da de alta a los nuevos y normaliza el nombre', store.usuarios().some((u) => u.nombre === 'luis')
+        && store.usuarios().some((u) => u.nombre === 'maria'), JSON.stringify(store.usuarios().map((u) => u.nombre)));
+    check('el PIN restaurado funciona', store.validarUsuario('luis', '4321').ok);
+    check('actualiza el PIN de quien ya existía', store.validarUsuario('ana', '9999').ok && !store.validarUsuario('ana', '1234').ok);
+    check('cuenta los mal escritos y no los da de alta', r.malos === 2 && r.creados === 3, JSON.stringify(r));
+    check('restaura con la huella y respeta el desactivado', store.usuarios().filter((u) => u.nombre === 'pepe')[0].huella === 'abc'
+        && store.usuarios().filter((u) => u.nombre === 'pepe')[0].activo === false);
+    store.restaurarUsuarios({ usuarios: [{ nombre: 'otro', pin: '5555' }] });
+    check('NO borra a nadie que no venga en el fichero', store.usuarios().length === 5, JSON.stringify(store.usuarios().map((u) => u.nombre)));
+    check('un fichero sin lista de usuarios se rechaza sin romper', !store.restaurarUsuarios('no soy json').ok
+        && !store.restaurarUsuarios({ usuarios: 'x' }).ok && store.usuarios().length === 5);
     silenciar();
-
-    let r = null;
-    respaldo.exportar((x) => { r = x; });
-    const env = mock.peticiones()[mock.peticiones().length - 1];
-    hablar();
-    check('exporta por POST a la ruta y puerto correctos',
-        env.method === 'POST' && env.url === 'http://192.168.1.50:8099/respaldo', env.url + ' ' + env.method);
-    check('el respaldo lleva usuarios, huellas y contadores',
-        env.cuerpo.usuarios.length === 1 && !!env.cuerpo.usuarios[0].huella
-        && env.cuerpo.contadores.ana.paginas === 6, JSON.stringify(env.cuerpo).slice(0, 80));
-    check('y avisa de que fue bien', r && r.ok, JSON.stringify(r));
-    silenciar();
-
-    // El PC apagado no puede romper nada ni dejar el respaldo colgado.
-    const caido = makePedk({ red: { caida: true } });
-    globalThis.pedk = caido.pedk;
-    store._recargar();
-    respaldo.fijarDestino('192.168.1.50');
-    let r2 = null;
-    respaldo.exportar((x) => { r2 = x; });
-    hablar();
-    check('si el PC está apagado, falla sin romper', r2 && !r2.ok, JSON.stringify(r2));
-    // Un fallo no debe dejar el respaldo "en curso" para siempre: eso lo bloquearía.
-    check('un fallo no deja el respaldo bloqueado', !respaldo.estado().enCurso);
-    r2 = null;
-    respaldo.exportar((x) => { r2 = x; });
-    check('y el reintento vuelve a intentarlo de verdad', r2 !== null, JSON.stringify(r2));
-    silenciar();
-
-    // Importar: el fichero del PC da de alta a la gente.
-    const conUsuarios = makePedk({ red: { respuestas: { '/usuarios.json': { code: 200, body: {
-        usuarios: [
-            { nombre: 'luis', pin: '4321' },
-            { nombre: 'MARIA', pin: '1111' },
-            { nombre: 'ana', pin: '9999' },
-            { nombre: 'no valido!', pin: '1234' },
-            { nombre: 'sinpin' },
-        ],
-    } } } } });
-    globalThis.pedk = conUsuarios.pedk;
-    store._recargar();
-    store.agregarUsuario('ana', '1234');
-    respaldo.fijarDestino('10.0.0.7');
-    let r3 = null;
-    respaldo.importar('usuarios', (x) => { r3 = x; });
-    hablar();
-    check('importa por GET de /usuarios.json',
-        mock2Ultima(conUsuarios).url === 'http://10.0.0.7:8099/usuarios.json'
-        && mock2Ultima(conUsuarios).method === 'GET', mock2Ultima(conUsuarios).url);
-    check('da de alta a los nuevos y normaliza el nombre',
-        !!store.usuarios().filter((u) => u.nombre === 'luis')[0]
-        && !!store.usuarios().filter((u) => u.nombre === 'maria')[0],
-        JSON.stringify(store.usuarios().map((u) => u.nombre)));
-    check('el PIN importado funciona', store.validarUsuario('luis', '4321').ok);
-    check('actualiza el PIN de quien ya existía', store.validarUsuario('ana', '9999').ok
-        && !store.validarUsuario('ana', '1234').ok);
-    check('cuenta los mal escritos y no los da de alta', r3 && r3.detalle.indexOf('2 mal') >= 0,
-        JSON.stringify(r3));
-    check('NO borra a nadie que no venga en el fichero', store.usuarios().length === 3,
-        JSON.stringify(store.usuarios().map((u) => u.nombre)));
-    silenciar();
-
-    // RESTAURAR va por otra ruta que dar de alta gente nueva. Con un solo botón, la
-    // plantilla de ejemplo del servidor acabó dada de alta como usuarios de verdad.
-    const conAmbos = makePedk({ red: { respuestas: {
-        '/usuarios.json': { code: 200, body: { usuarios: [] } },
-        '/restaurar.json': { code: 200, body: { usuarios: [{ nombre: 'zoe', huella: 'ff11' }] } },
-    } } });
-    globalThis.pedk = conAmbos.pedk;
-    store._recargar();
-    respaldo.fijarDestino('10.0.0.7');
-    let rr = null;
-    respaldo.importar('restaurar', (x) => { rr = x; });
-    hablar();
-    check('restaurar pide /restaurar.json, no /usuarios.json',
-        mock2Ultima(conAmbos).url === 'http://10.0.0.7:8099/restaurar.json', mock2Ultima(conAmbos).url);
-    check('y devuelve a la gente del respaldo con su huella',
-        store.usuarios().length === 1 && store.usuarios()[0].huella === 'ff11', JSON.stringify(store.usuarios()));
-    silenciar();
-    // Una lista vacía no debe dar de alta a nadie ni decir que fue bien.
-    let rv = null;
-    respaldo.importar('usuarios', (x) => { rv = x; });
-    hablar();
-    check('usuarios.json vacío no da de alta a nadie y lo dice',
-        rv && !rv.ok && /vacío/.test(rv.detalle) && store.usuarios().length === 1, JSON.stringify(rv));
-    silenciar();
-
-    // Un fichero con un respaldo entero también vale para restaurar.
-    const desdeRespaldo = store.restaurarUsuarios({ usuarios: [{ nombre: 'pepe', huella: 'abc', activo: false }] });
-    hablar();
-    check('restaura desde un respaldo entero, con su huella', desdeRespaldo.creados === 1
-        && store.usuarios().filter((u) => u.nombre === 'pepe')[0].huella === 'abc');
-    check('y respeta el desactivado', store.usuarios().filter((u) => u.nombre === 'pepe')[0].activo === false);
-    silenciar();
-
-    // Basura por la red no debe dar de alta a nadie ni lanzar.
-    const basura = makePedk({ red: { respuestas: { '/usuarios.json': { code: 200, body: 'no soy json' } } } });
-    globalThis.pedk = basura.pedk;
-    store._recargar();
-    respaldo.fijarDestino('10.0.0.7');
-    let r4 = null;
-    respaldo.importar('usuarios', (x) => { r4 = x; });
-    hablar();
-    check('un fichero que no es JSON se rechaza sin romper', r4 && !r4.ok && store.usuarios().length === 0,
-        JSON.stringify(r4));
-    silenciar();
-    respaldo.detener();
-}
-
-function mock2Ultima(m) {
-    const p = m.peticiones();
-    return p[p.length - 1];
 }
 
 /* ------------------------------------------------------------------ */
@@ -948,6 +845,20 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         }));
         return { filas, mayor, texto: T.textContent };
     };
+    /** Una copia con `n` personas del tamaño de las reales (nombre, cédula, contadores). */
+    const copiaDe = (n) => {
+        const usuarios = [];
+        const contadores = {};
+        for (let i = 0; i < n; i++) {
+            const nombre = 'usuario.' + String(i).padStart(5, '0');
+            usuarios.push({ nombre, huella: (0x10000000 + i * 7919).toString(16) + (0x20000000 + i * 104729).toString(16),
+                activo: true, creado: '2026-09-21T12:00:00.000Z', cedula: String(1700000000 + i),
+                nombreCompleto: 'Nombre Segundo Apellido Apellido ' + i });
+            contadores[nombre] = { impresiones: 120 + i, paginas: 1500 + i, copias: 30, paginasCopia: 400 };
+        }
+        return { formato: 1, app: config.WEB_APP, usuarios, contadores, registro: [],
+            ajustes: { modo: 'retencion', bloqueoActivo: true, bloquearCopia: true, minutosSesion: 3, huellaAdmin: null } };
+    };
     let listaJs = null;   // se lee una vez: una prueba baja el tope y el script ya no cabría
     const verLista = async (tok) => {
         const el = (tag) => ({ tag, children: [], textContent: '', className: '', attrs: {},
@@ -1188,7 +1099,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('el CSV lleva nombre completo, cédula y estado', /\njperez;José Pérez;99999;activo;1;3;0;0;3\n/.test(p0)
         && /\nanon;a x b;;activo;0;0;0;0;0\n/.test(p0) && /\nfantasma;;;borrado;1;2/.test(p0), p0);
 
-    // Viajan en el respaldo y vuelven al restaurar.
+    // Viajan en la copia de seguridad y vuelven al restaurar.
     const copia = JSON.parse(JSON.stringify(store.respaldo()));
     store.quitarUsuario('jperez');
     store.restaurarUsuarios(copia);
@@ -1246,24 +1157,6 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('el PIN de fábrica ya no entra', /incorrecto/.test(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body));
     store.olvidarFallos('#web-admin');
 
-    // Respaldo.
-    resp = pedir('/respaldo', 'POST', 's=' + sA + '&a=subir');
-    check('respaldar sin IP lo dice', /Ponga primero la IP/.test(resp.body));
-    resp = pedir('/respaldo', 'POST', 's=' + sA + '&a=ip&ip=192.168.1');
-    check('rechaza una IP mal escrita', /IP no válida/.test(resp.body) && !store.ajustes().respaldoIp);
-    pedir('/respaldo', 'POST', 's=' + sA + '&a=ip&ip=192.168.0.50');
-    const antesPet = mock.peticiones().length;
-    resp = pedir('/respaldo', 'POST', 's=' + sA + '&a=subir');
-    const pet = mock.peticiones()[mock.peticiones().length - 1];
-    check('guarda la IP y respalda al PC', store.ajustes().respaldoIp === '192.168.0.50' && mock.peticiones().length > antesPet
-        && pet.url === 'http://192.168.0.50:8099/respaldo' && pet.method === 'POST', pet && pet.url);
-    check('la página de respaldo cabe y enseña el resultado', web.bytesUtf8(resp.body) <= config.WEB_MAX_BYTES
-        && /192\.168\.0\.50:8099/.test(resp.body), web.bytesUtf8(resp.body));
-    pedir('/respaldo', 'POST', 's=' + sA + '&a=restaurar');
-    check('restaurar lo pide a su ruta', mock.peticiones()[mock.peticiones().length - 1].url === 'http://192.168.0.50:8099/restaurar.json');
-    pedir('/respaldo', 'POST', 's=' + sA + '&a=apagar');
-    check('apagar el respaldo', !store.ajustes().respaldoIp);
-
     // Copia de seguridad desde el navegador: descargar de una impresora y subir a otra vacía.
     const navegador = (sesionTok, archivo, comprimir = true) => {
         const env = { bajado: null, estado: { textContent: '', className: '' }, posts: [] };
@@ -1303,7 +1196,6 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
     pedir('/ajuste', 'POST', 's=' + sA + '&a=bloqueo');
     pedir('/ajuste', 'POST', 's=' + sA + '&a=copia');
-    pedir('/respaldo', 'POST', 's=' + sA + '&a=ip&ip=192.168.0.100');
     const antes = JSON.parse(JSON.stringify(store.respaldo()));
     check('la impresora de antes está en retención con bloqueo', antes.ajustes.modo === 'retencion' && antes.ajustes.bloqueoActivo);
     check('la página de copia cabe', web.bytesUtf8(pedir('/copia', 'GET', 's=' + sA).body) <= config.WEB_MAX_BYTES);
@@ -1350,7 +1242,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('vuelven los contadores y el registro', JSON.stringify(despues.contadores) === JSON.stringify(antes.contadores)
         && despues.registro.length === antes.registro.length);
     check('vuelven los ajustes y el PIN de administrador', despues.ajustes.bloquearCopia === true
-        && despues.ajustes.respaldoIp === '192.168.0.100' && despues.ajustes.huellaAdmin === antes.ajustes.huellaAdmin);
+        && despues.ajustes.huellaAdmin === antes.ajustes.huellaAdmin);
     check('modo y bloqueo se aplican de verdad, como en el panel',
         store.ajustes().modo === 'retencion' && store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === false);
 
@@ -1379,37 +1271,6 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('un trozo demasiado grande se rechaza', /^ERROR;/.test(pedir('/subir', 'POST', 's=' + sN + '&u=x&i=0&t=1&d=' + 'a'.repeat(config.WEB_TROZO_SUBIDA + 1)).body));
     check('subir pide sesión', !/^(SIGUE|OK|ERROR)/.test(pedir('/subir', 'POST', 'u=x&i=0&t=1&d=e30').body));
     check('base64url con acentos y emoji', web.desdeBase64url(Buffer.from('añ€😀', 'utf8').toString('base64url')) === 'añ€😀');
-
-    // Prueba de capacidad: datos de prueba en ficheros propios, sin tocar los reales.
-    const capacidad = await import('./.build/capacidad.mjs');
-    capacidad._pausa(0);
-    const reales = JSON.stringify(store.respaldo().usuarios);
-    const m100 = capacidad.medirPaso(100);
-    check('un paso guarda, relee y cronometra', m100.ok && m100.kb > 0 && m100.msGuardar !== null, JSON.stringify(m100));
-    check('los datos de prueba tienen el tamaño de los reales (nombre, cédula, contadores)',
-        (() => { const d = capacidad.datosFalsos(10); return d.usuarios[0].cedula && d.usuarios[0].nombreCompleto && d.contadores[d.usuarios[0].nombre]; })());
-    sesion.abrir('jperez', '1234');
-    resp = pedir('/capacidad', 'POST', 's=' + sN);
-    check('con alguien usando la impresora no empieza', /usando la impresora/.test(resp.body) && !capacidad.estadoPrueba().enCurso);
-    sesion.cerrar('prueba');
-    resp = pedir('/capacidad', 'POST', 's=' + sN);
-    check('empieza en segundo plano y contesta al momento', /en marcha/.test(resp.body) && capacidad.estadoPrueba().enCurso);
-    check('no se puede lanzar dos veces', /No se pudo empezar/.test(pedir('/capacidad', 'POST', 's=' + sN).body));
-    for (let i = 0; i < 100 && capacidad.estadoPrueba().enCurso; i++) await esperar(20);
-    const cap = capacidad.estadoPrueba();
-    check('recorre todos los pasos y termina', !cap.enCurso && cap.pasos.length === capacidad.PASOS.length && /máximo probado/.test(cap.fin), cap.fin);
-    check('no toca los datos reales', JSON.stringify(store.respaldo().usuarios) === reales);
-    check('deja pequeños sus ficheros de prueba', JSON.stringify(Object.load('/storage/prueba-capacidad.json')) === '{}');
-    const pc2 = pedir('/capacidad', 'GET', 's=' + sN).body;
-    check('la página de resultados cabe con todos los pasos', web.bytesUtf8(pc2) <= config.WEB_MAX_BYTES && /5000<\/td>/.test(pc2), web.bytesUtf8(pc2));
-    check('ajustes sigue cabiendo con el enlace nuevo', web.bytesUtf8(pedir('/ajustes', 'GET', 's=' + sN).body) <= config.WEB_MAX_BYTES);
-    const lento = Object.save;
-    Object.save = (f, o) => { if (o && o.usuarios && o.usuarios.length >= 1000) throw new Error('sin espacio'); return lento(f, o); };
-    capacidad.empezar();
-    for (let i = 0; i < 100 && capacidad.estadoPrueba().enCurso; i++) await esperar(20);
-    Object.save = lento;
-    check('se para en el primer fallo y dice dónde', /falló con 1000 usuarios: sin espacio/.test(capacidad.estadoPrueba().fin)
-        && capacidad.estadoPrueba().pasos.length === 4, capacidad.estadoPrueba().fin);
 
     // ---- Importar usuarios desde Excel (ficheros guardados por Excel de verdad) ----
     const { DOMParser } = await import('@xmldom/xmldom');
@@ -1531,7 +1392,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         web._reiniciar();
         web.instalar();
         const tM = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
-        const grande = JSON.stringify(Object.assign({ formato: 1, app: config.WEB_APP }, capacidad.datosFalsos(1000)));
+        const grande = JSON.stringify(copiaDe(1000));
         const navG = navegador(tM, { name: 'grande.json', text: () => Promise.resolve(grande) }, comprimir);
         navG.correr('subirCopia(' + navG.boton + ')');
         for (let i = 0; i < 300 && !navG.estado.className; i++) await esperar(20);
@@ -1539,6 +1400,18 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             store.usuarios().length === 1000 && navG.estado.className === 'ok', navG.estado.textContent);
         check('  y en ' + (comprimir ? 'menos de 200' : 'menos de ' + config.WEB_SUBIDA_MAX_TROZOS) + ' envíos',
             navG.posts.length < (comprimir ? 200 : config.WEB_SUBIDA_MAX_TROZOS), navG.posts.length);
+    }
+
+    // El respaldo al PC y la prueba de capacidad se quitaron (22-09-2026): los respaldos
+    // los hace el administrador con la copia de seguridad.
+    {
+        const tQ = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+        const aj = pedir('/ajustes', 'GET', 's=' + tQ).body;
+        check('Mantenimiento ofrece sólo copia de seguridad y PIN de administrador',
+            /formaction="copia"/.test(aj) && /formaction="pinadmin"/.test(aj) && !/respaldo|capacidad/.test(aj));
+        check('las direcciones del respaldo y la capacidad ya no hacen nada',
+            /Usuarios \(/.test(pedir('/respaldo', 'POST', 's=' + tQ + '&a=subir').body)
+            && /Usuarios \(/.test(pedir('/capacidad', 'POST', 's=' + tQ).body));
     }
 
     // Ninguna página, en su peor caso, puede caer en el aviso de "no cabe".
@@ -1551,9 +1424,6 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         (await import('./.build/acciones.mjs')).fijarBloqueo(true);
         store.cambiarAjuste('bloquearCopia', true);
         const tP = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
-        capacidad._pausa(0);
-        capacidad.empezar();
-        for (let i = 0; i < 100 && capacidad.estadoPrueba().enCurso; i++) await esperar(20);
         sesion.abrir(largo, '1234');   // para los mensajes largos de "persona usando la impresora"
         const peores = [
             ['/', 'GET', ''], ['/entrar', 'POST', 'pin=0'], ['/usuarios', 'GET', 's=' + tP], ['/nuevo', 'GET', 's=' + tP],
@@ -1561,7 +1431,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             ['/usuario', 'GET', 's=' + tP + '&n=' + largo], ['/cambiar', 'POST', 's=' + tP + '&nombre=' + largo + '&a=pin&pin=1'],
             ['/contadores', 'GET', 's=' + tP], ['/ajustes', 'GET', 's=' + tP], ['/ajuste', 'POST', 's=' + tP + '&a=modo'],
             ['/ajuste', 'POST', 's=' + tP + '&a=minutos&minutos=7'], ['/pinadmin', 'POST', 's=' + tP + '&actual=1'],
-            ['/respaldo', 'POST', 's=' + tP + '&a=ip&ip=1.2.3'], ['/copia', 'GET', 's=' + tP], ['/capacidad', 'GET', 's=' + tP],
+            ['/copia', 'GET', 's=' + tP],
             ['/importar', 'GET', 's=' + tP], ['/estilo.css', 'GET', ''], ['/estilo2.css', 'GET', ''],
             ['/lista.js', 'GET', ''], ['/contadores.js', 'GET', ''], ['/csv.js', 'GET', ''], ['/copia-bajar.js', 'GET', ''], ['/copia-subir.js', 'GET', ''], ['/subir.js', 'GET', ''],
         ];
