@@ -112,11 +112,12 @@ export const config = {
     WEB_SESION_MS: 15 * 60 * 1000,
     /**
      * Tope de cada respuesta web, en bytes. Medido el 21-09-2026 con /tam?n=...: hasta
-     * 1998 bytes salen; desde 1999 la impresora anuncia la respuesta y no manda nada
-     * (página en blanco). Con 4390 además dejó la web colgada hasta reiniciar. Se deja
-     * margen por si el firmware cuenta algo más que el cuerpo.
+     * 1998 bytes salen (con Content-Type text/plain); desde 1999 la impresora anuncia
+     * la respuesta y no manda nada (página en blanco). Con 4390 además dejó la web
+     * colgada hasta reiniciar. 1900 deja margen aunque el firmware contara también la
+     * cabecera (text/html es 14 bytes más largo que text/plain).
      */
-    WEB_MAX_BYTES: 1800,
+    WEB_MAX_BYTES: 1900,
     /**
      * Lo que la impresora RECIBE aguanta mucho menos (medido el 21-09-2026): un POST de
      * 502 bytes llega y uno de 1002 cuelga la web hasta reiniciar. La copia de

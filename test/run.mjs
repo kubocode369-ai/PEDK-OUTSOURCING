@@ -922,6 +922,32 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         { url: BASE + ruta, method: metodo || 'GET', body: cuerpo || '' });
     const token = (html) => (/(?:name="s" value="|[?]s=)([0-9a-f]+)/.exec(html) || [])[1];
     // La lista la pinta el navegador: se ejecuta lista.js con un DOM mínimo y se leen las filas.
+    /** Lo que pinta contadores.js: [{nombre, detalle, celdas, clase}]. */
+    const verContadores = async (tok) => {
+        const el = (tag) => ({ tag, children: [], textContent: '', className: '', attrs: {},
+            appendChild(c) { this.children.push(c); return c; }, getAttribute(k) { return this.attrs[k]; } });
+        const T = el('table');
+        T.attrs['data-s'] = tok;
+        let mayor = 0;
+        const ctx = {
+            document: { getElementById: () => T, createElement: el },
+            fetch: (url) => {
+                const [ruta, q] = url.split('?');
+                const b = pedir('/' + ruta, 'GET', q).body;
+                mayor = Math.max(mayor, web.bytesUtf8(b));
+                return Promise.resolve({ text: () => Promise.resolve(b) });
+            },
+        };
+        new Function(...Object.keys(ctx), pedir('/contadores.js').body)(...Object.values(ctx));
+        await esperar(30);
+        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 6).map((r) => ({
+            nombre: r.children[0].children[0].textContent,
+            detalle: (r.children[0].children[2] || {}).textContent || '',
+            celdas: r.children.slice(1).map((c) => (c.children[0] || c).textContent),
+            clase: r.className,
+        }));
+        return { filas, mayor, texto: T.textContent };
+    };
     let listaJs = null;   // se lee una vez: una prueba baja el tope y el script ya no cabría
     const verLista = async (tok) => {
         const el = (tag) => ({ tag, children: [], textContent: '', className: '', attrs: {},
@@ -946,7 +972,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 3).map((r) => ({
             nombre: r.children[0].children[0].textContent,
             completo: (r.children[0].children[2] || {}).textContent || '',
-            estado: r.children[1].textContent,
+            estado: (r.children[1].children[0] || r.children[1]).textContent,
             botones: r.children[2].children.map((b) => b.value + '=' + b.textContent),
             clase: r.className,
         }));
@@ -1072,18 +1098,12 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     // Contadores: 60 personas con trabajos, más lo que se imprimió sin identificarse.
     store.usuarios().forEach((u, i) => store.contar(u.nombre, { tipo: i % 3 ? 'PRINT' : 'COPY', paginas: i + 1 }));
     store.contar(store.SIN_SESION, { tipo: 'PRINT', paginas: 7 });
-    const cont = [];
-    let mayorC = 0;
-    for (let n = 0; n < 100; n++) {
-        const b = pedir('/contadores', 'GET', 's=' + s3 + '&p=' + n).body;
-        mayorC = Math.max(mayorC, web.bytesUtf8(b));
-        const nuevos = (b.match(/<tr[^>]*><td><b>[^<]+<\/b>/g) || []).filter((x) => !cont.includes(x));
-        if (!nuevos.length) break;
-        cont.push(...nuevos);
-    }
-    check('contadores: ninguna página pasa del tope', mayorC <= config.WEB_MAX_BYTES, mayorC);
-    check('contadores: paginando salen todos', cont.length === store.contadoresDeTodos().length, cont.length + ' de ' + store.contadoresDeTodos().length);
-    check('quien no se identificó sale como "Sin identificar"', cont.some((x) => /Sin identificar/.test(x)));
+    const vc = await verContadores(s3);
+    check('contadores: la página y los datos caben en el tope', vc.mayor <= config.WEB_MAX_BYTES
+        && web.bytesUtf8(pedir('/contadores', 'GET', 's=' + s3).body) <= config.WEB_MAX_BYTES, vc.mayor);
+    check('contadores: salen TODOS en una sola página', vc.filas.length === store.contadoresDeTodos().length,
+        vc.filas.length + ' de ' + store.contadoresDeTodos().length);
+    check('quien no se identificó sale como "Sin identificar"', vc.filas.some((f) => f.nombre === 'Sin identificar' && f.celdas[4] === '7'));
 
     // El CSV lo junta el navegador: se ejecuta el script de verdad con fetch simulado.
     const js = pedir('/csv.js').body;
@@ -1161,8 +1181,9 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('contadores de todos: los que no imprimieron salen con cero',
         todos.some((c) => c.quien === 'anon' && c.paginas === 0) && todos[0].quien === 'jperez', JSON.stringify(todos.map((c) => c.quien)));
     check('y quien ya no existe pero imprimió sale como borrado', todos.some((c) => c.quien === 'fantasma' && !c.existe));
-    const pc = pedir('/contadores', 'GET', 's=' + s3).body;
-    check('la página de contadores enseña al que tiene cero, en gris', /class="inactivo"><td><b>anon/.test(pc) && /usuario borrado/.test(pc));
+    const vc2 = await verContadores(s3);
+    check('la página de contadores enseña al que tiene cero, en gris', vc2.filas.some((f) => f.nombre === 'anon' && f.clase === 'inactivo')
+        && vc2.filas.some((f) => f.nombre === 'fantasma' && f.detalle === 'usuario borrado'), JSON.stringify(vc2.filas.slice(0, 4)));
     const p0 = pedir('/csv', 'GET', 's=' + s3 + '&desde=0').body;
     check('el CSV lleva nombre completo, cédula y estado', /\njperez;José Pérez;99999;activo;1;3;0;0;3\n/.test(p0)
         && /\nanon;a x b;;activo;0;0;0;0;0\n/.test(p0) && /\nfantasma;;;borrado;1;2/.test(p0), p0);
@@ -1188,12 +1209,12 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     acciones.alCambiar(() => { avisos++; });
     const aj = pedir('/ajustes', 'GET', 's=' + sA).body;
     check('la página de ajustes cabe y enseña modo y bloqueo', web.bytesUtf8(aj) <= config.WEB_MAX_BYTES
-        && /Modo: <b>sesión/.test(aj) && /Bloqueo: <b>apagado/.test(aj), web.bytesUtf8(aj));
+        && /Modo<\/th><td><b>sesión/.test(aj) && /Bloqueo<\/th><td><b>apagado/.test(aj), web.bytesUtf8(aj));
     pedir('/ajuste', 'GET', 's=' + sA + '&a=bloqueo');
     check('por GET no cambia ningún ajuste', !store.ajustes().bloqueoActivo);
     resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=bloqueo');
     check('encender el bloqueo desde la web bloquea el equipo de verdad',
-        store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === true && /Bloqueo: <b>ENCENDIDO/.test(resp.body), resp.body.slice(-300));
+        store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === true && /Bloqueo<\/th><td><b>ENCENDIDO/.test(resp.body), resp.body.slice(-300));
     check('y avisa al panel para que repinte', avisos > 0);
     resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
     check('pasar a retención reabre la impresión desde PC (si no, no llegan los documentos)',
@@ -1518,6 +1539,37 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             store.usuarios().length === 1000 && navG.estado.className === 'ok', navG.estado.textContent);
         check('  y en ' + (comprimir ? 'menos de 200' : 'menos de ' + config.WEB_SUBIDA_MAX_TROZOS) + ' envíos',
             navG.posts.length < (comprimir ? 200 : config.WEB_SUBIDA_MAX_TROZOS), navG.posts.length);
+    }
+
+    // Ninguna página, en su peor caso, puede caer en el aviso de "no cabe".
+    {
+        equipo({ retencion: { KuboC: [] } });
+        web._reiniciar();
+        web.instalar();
+        const largo = 'usuario.largo.x20';
+        store.agregarUsuario(largo, '1234', { nombreCompleto: 'Ñ'.repeat(config.NOMBRE_COMPLETO_MAX), cedula: '123456789012345' });
+        (await import('./.build/acciones.mjs')).fijarBloqueo(true);
+        store.cambiarAjuste('bloquearCopia', true);
+        const tP = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+        capacidad._pausa(0);
+        capacidad.empezar();
+        for (let i = 0; i < 100 && capacidad.estadoPrueba().enCurso; i++) await esperar(20);
+        sesion.abrir(largo, '1234');   // para los mensajes largos de "persona usando la impresora"
+        const peores = [
+            ['/', 'GET', ''], ['/entrar', 'POST', 'pin=0'], ['/usuarios', 'GET', 's=' + tP], ['/nuevo', 'GET', 's=' + tP],
+            ['/alta', 'POST', 's=' + tP + '&nombre=' + largo + '&pin=1234&cedula=123456789012345'],
+            ['/usuario', 'GET', 's=' + tP + '&n=' + largo], ['/cambiar', 'POST', 's=' + tP + '&nombre=' + largo + '&a=pin&pin=1'],
+            ['/contadores', 'GET', 's=' + tP], ['/ajustes', 'GET', 's=' + tP], ['/ajuste', 'POST', 's=' + tP + '&a=modo'],
+            ['/ajuste', 'POST', 's=' + tP + '&a=minutos&minutos=7'], ['/pinadmin', 'POST', 's=' + tP + '&actual=1'],
+            ['/respaldo', 'POST', 's=' + tP + '&a=ip&ip=1.2.3'], ['/copia', 'GET', 's=' + tP], ['/capacidad', 'GET', 's=' + tP],
+            ['/importar', 'GET', 's=' + tP], ['/estilo.css', 'GET', ''], ['/estilo2.css', 'GET', ''],
+            ['/lista.js', 'GET', ''], ['/contadores.js', 'GET', ''], ['/csv.js', 'GET', ''], ['/copia-bajar.js', 'GET', ''], ['/copia-subir.js', 'GET', ''], ['/subir.js', 'GET', ''],
+        ];
+        const nocaben = peores.map(([r, m, b]) => [r + ' ' + m, pedir(r, m, b).body])
+            .filter(([, cuerpo]) => /no cabe en lo que la impresora/.test(cuerpo) || web.bytesUtf8(cuerpo) > config.WEB_MAX_BYTES)
+            .map(([r]) => r);
+        sesion.cerrar('prueba');
+        check('todas las páginas caben en su peor caso', nocaben.length === 0, nocaben.join(', '));
     }
 
     check('la ruta /eco describe la petición', /campos=/.test(pedir('/eco', 'GET').body));

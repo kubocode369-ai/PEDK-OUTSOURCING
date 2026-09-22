@@ -163,14 +163,52 @@ function sesionValida(token, ahora) {
  * acción, y `atender` nunca deja salir nada por encima de config.WEB_MAX_BYTES.
  */
 
-const ESTILO = 'body{font-family:system-ui,sans-serif;margin:0;background:#f4f5f7;color:#222}'
-    + 'header{background:#1f4e79;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}'
-    + 'header h1{font-size:17px;margin:0}header a{color:#fff}'
-    + 'main{padding:12px 16px;max-width:760px}'
-    + '.caja{background:#fff;border:1px solid #ddd;border-radius:6px;padding:10px 14px;margin-bottom:12px}'
-    + 'table{border-collapse:collapse;width:100%}td{border-bottom:1px solid #e3e3e3;padding:6px}'
-    + 'input{padding:5px;font-size:14px;margin:2px 0}button{padding:5px 10px;font-size:14px;cursor:pointer;margin:2px 0}'
-    + 'td button{margin-right:4px}.ok{color:#1b7a2f}.error{color:#b3261e}.aviso{background:#fff4d6}.inactivo{color:#999}';
+/*
+ * DISEÑO. Inspirado en la web de administración de Pantum (rojo corporativo, barra de
+ * pestañas con la activa en rojo, paneles con cabecera de color), pero SIN su logotipo:
+ * la página es de esta app, no de Pantum. Responsive: en el móvil las pestañas se
+ * deslizan, las tablas se desplazan de lado y los campos ocupan todo el ancho.
+ *
+ * Todo cabe en el tope de ~1,8 KB por respuesta: el estilo va en su propio fichero, las
+ * clases son cortas y no hay imágenes ni fuentes descargadas.
+ *   .c panel (h2 = cabecera roja)   .b enlace con forma de botón   (botón gris por defecto)
+ *   .p botón principal (rojo)   .x botón peligroso   .w aviso amarillo   p.ok / p.error mensajes   .t tabla deslizable
+ *   .g / .r etiqueta verde / gris   .v "‹ Volver"   .k pie pequeño
+ */
+// En dos ficheros (juntos pasan del tope); el primero trae al segundo con @import.
+const ESTILO = '@import "estilo2.css";:root{--r:#b03}*{box-sizing:border-box}'
+    + 'body{margin:0;font:15px/1.45 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
+    + 'header{background:#fff;padding:12px 16px;border-bottom:4px double var(--r)}'
+    + 'header b{color:var(--r);font-size:19px;letter-spacing:.5px}'
+    + 'nav{display:flex;overflow-x:auto;background:linear-gradient(#fafafa,#dcdcdc);border-bottom:1px solid #bbb}'
+    + 'nav a{padding:11px 16px;color:#333;font-weight:600;text-decoration:none;white-space:nowrap}'
+    + 'nav a:hover{background:#ccc}nav a.on{background:var(--r);color:#fff}nav a:last-child{margin-left:auto}'
+    + 'main{max-width:960px;margin:0 auto;padding:16px}h1{font-size:21px;margin:4px 0 14px}'
+    + '.c{background:#fff;border:3px solid #ccc;margin-bottom:16px;padding:0 16px 14px}'
+    + '.c h2{margin:0 -16px 12px;padding:7px 16px;background:var(--r);color:#fff;font-size:15px}'
+    + 'button,.b{display:inline-block;background:#fff;color:#333;border:1px solid #aaa;border-radius:4px;'
+    + 'padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;margin:3px 4px 3px 0}'
+    + '.p{background:var(--r);color:#fff;border-color:var(--r)}.x{color:var(--r);border-color:var(--r)}'
+    + 'button:disabled{opacity:.5}button:hover,.b:hover{filter:brightness(.92)}'
+    + 'label{display:block;font-weight:600;margin:10px 0 4px}';
+const ESTILO2 = ''
+    + 'input,select{font:inherit;padding:8px 10px;border:1px solid #bbb;border-radius:4px;max-width:100%}'
+    + 'input:focus,select:focus{outline:2px solid var(--r)}'
+    + '.t{overflow-x:auto}table{border-collapse:collapse;width:100%}'
+    + 'th,td{padding:9px 8px;border-bottom:1px solid #e4e4e4;text-align:left;vertical-align:middle}'
+    + 'th{background:#f6f6f6;font-size:13px;color:#555}tr.inactivo td{color:#999}tr.error td{color:#b3261e}'
+    + 'p.ok,p.error,.w{padding:10px 12px;border-radius:4px;border-left:4px solid}'
+    + 'p.ok{background:#e9f6ec;border-color:#1b7a2f}p.error{background:#fdecea;border-color:#b3261e}'
+    + '.w{background:#fff6d9;border-color:#e0a800}.ok{color:#1b7a2f}.error{color:#b3261e}'
+    + '.g,.r{padding:2px 8px;border-radius:10px;font-size:12px;background:#e9f6ec;color:#1b7a2f}.r{background:#eee;color:#777}'
+    + '.v{display:inline-block;margin-bottom:8px;color:var(--r)}.k{color:#666;font-size:13px}'
+    // Móvil: la lista de usuarios (#t) pasa a tarjetas (nombre y estado arriba, botones
+    // debajo); las demás tablas se desplazan de lado dentro de su panel (.t).
+    + 'main,.c,.t{min-width:0;max-width:100%}.t{overflow-x:auto}'
+    + '@media(max-width:600px){body main{padding:10px}.c{padding:0 10px 10px}.c h2{margin:0 -10px 10px}'
+    + 'input,select{width:100%}td select{width:auto}#t tr:first-child{display:none}#t tr{display:block;padding:8px 0;border-bottom:1px solid #e4e4e4}'
+    + '#t td{display:inline-block;border:0;padding:2px 8px 2px 0}#t td:last-child{display:flex;gap:6px}'
+    + '#t td:last-child button{flex:1;margin:4px 0;padding:8px 4px}}';
 
 /** Bytes que ocupa el texto en UTF-8: el tope es de bytes, no de caracteres. */
 export function bytesUtf8(s) {
@@ -185,71 +223,61 @@ export function bytesUtf8(s) {
     return n;
 }
 
-function documento(titulo, cabecera, cuerpo) {
+const PESTANAS = [['usuarios', 'Usuarios'], ['contadores', 'Contadores'], ['ajustes', 'Ajustes'], ['salir', 'Salir']];
+
+/**
+ * Página completa. `token` null = sin sesión (login): sin pestañas. `activa`: qué pestaña
+ * va en rojo. `volver`: [ruta, texto] para el "‹ Volver" de las subpáginas.
+ */
+function documento(titulo, token, activa, cuerpo, volver) {
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
         + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/">'
         + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="estilo.css"></head><body>'
-        + '<header><h1>' + escapar(titulo) + '</h1>' + (cabecera || '') + '</header><main>' + cuerpo + '</main></body></html>';
+        + '<header><b>Impresión con PIN</b></header>'
+        + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
+            + (p[0] === activa ? ' class="on"' : '') + '>' + p[1] + '</a>').join('') + '</nav>' : '')
+        + '<main>' + (volver ? '<a class="v" href="' + volver[0] + '?s=' + token + '">‹ ' + volver[1] + '</a>' : '')
+        + '<h1>' + escapar(titulo) + '</h1>' + cuerpo + '</main></body></html>';
+}
+
+/** Un panel con cabecera roja. */
+function panel(titulo, cuerpo) {
+    return '<div class="c"><h2>' + titulo + '</h2>' + cuerpo + '</div>';
 }
 
 function mensajeHtml(msg) {
     return msg ? '<p class="' + (msg.ok ? 'ok' : 'error') + '">' + escapar(msg.texto) + '</p>' : '';
 }
 
-/** Enlace GET dentro de la sesión. `ruta` sin barra: es relativa a <base>. */
-function enlace(token, ruta, extra, texto) {
-    return '<a href="' + ruta + '?s=' + token + (extra || '') + '">' + texto + '</a>';
+/** Enlace GET dentro de la sesión. `ruta` sin barra: es relativa a <base>. `clase`: 'b', 'b s'... */
+function enlace(token, ruta, extra, texto, clase) {
+    return '<a ' + (clase ? 'class="' + clase + '" ' : '') + 'href="' + ruta + '?s=' + token + (extra || '') + '">' + texto + '</a>';
 }
 
-/** Formulario POST con el token. Los botones van en `campos`. */
 /** Un solo aviso para todos los "Borrar" de la lista: uno por fila no cabría. */
 const BORRAR_CONFIRMA = ' onsubmit="var v=event.submitter.value;return v[0]!=\'b\'||confirm(\'¿Borrar a \'+v.slice(2)+\'?\')"';
 
+/** Formulario POST con el token. Los botones van en `campos`. */
 function formulario(token, accion, campos, extra) {
     return '<form method="post" action="' + accion + '"' + (extra || '') + '><input type="hidden" name="s" value="' + token + '">'
         + campos + '</form>';
 }
 
-function campoPin(placeholder) {
-    return '<input type="password" name="pin" placeholder="' + placeholder + '" size="8" inputmode="numeric"> ';
+/** Campo con su etiqueta encima. */
+function campo(etiqueta, input) {
+    return '<label>' + etiqueta + '</label>' + input;
+}
+
+function campoPin(nombre) {
+    return '<input type="password" name="' + (nombre || 'pin') + '" size="10" inputmode="numeric" autocomplete="off">';
 }
 
 function paginaLogin(msg) {
-    return documento('Impresión con PIN', '', '<div class="caja"><form method="post" action="entrar">'
-        + '<p>PIN de administrador (el mismo del panel):</p>'
-        + '<input type="password" name="pin" inputmode="numeric" autofocus> '
-        + '<button>Entrar</button></form>' + mensajeHtml(msg) + '</div>');
+    return documento('Administración', null, null, mensajeHtml(msg) + '<div style="max-width:420px">' + panel('Entrar', '<form method="post" action="entrar">'
+        + campo('PIN de administrador', '<input type="password" name="pin" inputmode="numeric" autofocus>')
+        + '<p><button class="p">Entrar</button></p><p class="k">Es el mismo PIN que en Ajustes del panel de la impresora.</p></form>') + '</div>');
 }
 
-/**
- * Pagina `filas` (HTML de cada fila) según lo que quepa en el tope. `armar(filas, pie)`
- * devuelve la página entera. Los cortes se calculan siempre desde la primera fila: cada
- * página sale igual la pida quien la pida.
- */
-function paginarFilas(token, ruta, filas, pagina, armar) {
-    const reserva = 150;   // lo que ocupan "« Anterior · Página x de y · Siguiente »"
-    const cortes = [0];
-    let acumulado = '';
-    for (let i = 0; i < filas.length; i++) {
-        if (acumulado && bytesUtf8(armar(acumulado + filas[i], '', cortes.length - 1)) + reserva > config.WEB_MAX_BYTES) {
-            cortes.push(i);
-            acumulado = '';
-        }
-        acumulado += filas[i];
-    }
-    const total = cortes.length;
-    const n = Math.max(0, Math.min(total - 1, Math.floor(Number(pagina)) || 0));
-    const hasta = n + 1 < total ? cortes[n + 1] : filas.length;
-    let pie = '';
-    if (total > 1) {
-        pie = '<p>' + (n > 0 ? enlace(token, ruta, '&p=' + (n - 1), '« Anterior') + ' · ' : '')
-            + 'Página ' + (n + 1) + ' de ' + total
-            + (n + 1 < total ? ' · ' + enlace(token, ruta, '&p=' + (n + 1), 'Siguiente »') : '') + '</p>';
-    }
-    return armar(filas.slice(cortes[n], hasta).join(''), pie, n);
-}
-
-/** Lista compacta de usuarios. */
 /*
  * LISTA DE USUARIOS pintada por el navegador. Con el tope de ~2 KB por respuesta, una
  * tabla con botones hecha en la impresora sólo dejaba 3 personas por página. Ahora la
@@ -260,15 +288,13 @@ function paginarFilas(token, ruta, filas, pagina, armar) {
  */
 function paginaUsuarios(token, msg) {
     const n = store.usuarios().length;
-    const cab = '<span>' + enlace(token, 'contadores', '', 'Contadores') + ' · '
-        + enlace(token, 'ajustes', '', 'Ajustes') + ' · '
-        + enlace(token, 'nuevo', '', 'Nuevo usuario') + ' · ' + enlace(token, 'importar', '', 'Importar Excel') + ' · '
-        + enlace(token, 'salir', '', 'Salir') + '</span>';
     const aviso = (store.pinAdminDeFabrica()
-        ? '<p class="caja aviso">PIN de administrador de fábrica: cámbielo en Ajustes.</p>' : '')
-        + (n >= config.USUARIOS_AVISO ? '<p class="caja aviso">' + avisoCapacidad(n) + '</p>' : '');
-    return documento('Usuarios (' + n + ')', cab, aviso + mensajeHtml(msg) + '<div class="caja">'
-        + formulario(token, 'lista', '<table id="t" data-s="' + token + '"></table>', BORRAR_CONFIRMA)
+        ? '<p class="w">PIN de administrador de fábrica: cámbielo en Ajustes.</p>' : '')
+        + (n >= config.USUARIOS_AVISO ? '<p class="w">' + avisoCapacidad(n) + '</p>' : '');
+    return documento('Usuarios (' + n + ')', token, 'usuarios', aviso + mensajeHtml(msg)
+        + '<p>' + enlace(token, 'nuevo', '', '+ Nuevo usuario', 'b p') + enlace(token, 'importar', '', 'Importar Excel', 'b') + '</p>'
+        + '<div class="c t">' + formulario(token, 'lista', '<table id="t" data-s="' + token
+            + '"><tr><th>Usuario</th><th>Estado</th><th></th></tr></table>', BORRAR_CONFIRMA)
         + '</div><script src="lista.js"></script>');
 }
 
@@ -301,12 +327,13 @@ export function parteUsuarios(desde) {
 /* Todo con textContent: nada de lo que llega se interpreta como HTML. */
 const LISTA_JS = '(function(){var T=document.getElementById("t"),s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x)n.textContent=x;if(c)n.className=c;return n}'
-    + 'function b(v,x){var n=e("button",x);n.name="x";n.value=v;return n}'
+    + 'function b(v,x,c){var n=e("button",x,c);n.name="x";n.value=v;return n}'
     + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios."));'
     + 'L.forEach(function(l){var f=l.split("\\t"),a=f[1]=="1",r=e("tr",0,a?"":"inactivo"),d=e("td");'
     + 'd.appendChild(e("b",f[0]));if(f[2]){d.appendChild(e("br"));d.appendChild(e("small",f[2]))}r.appendChild(d);'
-    + 'r.appendChild(e("td",a?"activo":"desactivado"));d=e("td");d.appendChild(b("e "+f[0],"Editar"));'
-    + 'd.appendChild(b((a?"d ":"a ")+f[0],a?"Desactivar":"Activar"));d.appendChild(b("b "+f[0],"Borrar"));'
+    + 'd=e("td");d.appendChild(e("span",a?"activo":"desactivado",a?"g":"r"));r.appendChild(d);'
+    + 'd=e("td");d.appendChild(b("e "+f[0],"Editar"));'
+    + 'd.appendChild(b((a?"d ":"a ")+f[0],a?"Desactivar":"Activar"));d.appendChild(b("b "+f[0],"Borrar","x"));'
     + 'r.appendChild(d);T.appendChild(r)})}'
     + 'function p(n){fetch("usuarios.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
     + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
@@ -318,38 +345,35 @@ function persona(quien) {
     return quien === store.SIN_SESION ? 'Sin identificar' : quien;
 }
 
-/** Qué se ve de alguien en los contadores: su nombre completo, o por qué no hay. */
-function detalle(c) {
-    if (c.quien === store.SIN_SESION) return '';
-    if (!c.existe) return 'usuario borrado';
-    return c.nombreCompleto + (c.activo ? '' : ' (desactivado)');
+function paginaContadores(token, msg) {
+    const t = store.totales();
+    // La tabla la pinta el navegador con los datos del CSV (contadores.js): así salen todos
+    // en una página, como en Usuarios. En la impresora sólo cabían unas pocas filas.
+    return documento('Contadores', token, 'contadores', mensajeHtml(msg)
+        + '<p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> páginas (' + t.paginas + ' impresas, '
+        + t.paginasCopia + ' copiadas)</p><div style="margin-bottom:10px"><button class="p" data-s="' + token + '" onclick="bajarCsv(this)">Descargar CSV (Excel)</button>'
+        + formulario(token, 'cero', '<button class="x" onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
+            + 'Descargue antes el CSV.\')">Poner a cero</button>', ' style="display:inline"') + '</div>'
+        + '<div class="c t"><table id="c" data-s="' + token + '"><tr><th>Persona</th><th>Impr.</th><th>Pág.</th>'
+        + '<th>Copias</th><th>Pág. copia</th><th>Total</th></tr></table></div>'
+        + '<script src="csv.js"></script><script src="contadores.js"></script>');
 }
 
-function paginaContadores(token, msg, pagina) {
-    const lista = store.contadoresDeTodos();
-    const t = store.totales();
-    const cab = '<span>' + enlace(token, 'usuarios', '', 'Usuarios') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
-    // Quien no ha impreso nada sale en gris: también es un dato.
-    const filas = lista.map((c) => {
-        const total = c.paginas + c.paginasCopia;
-        const d = detalle(c);
-        return '<tr' + (total ? '' : ' class="inactivo"') + '><td><b>' + escapar(persona(c.quien)) + '</b>'
-            + (d ? '<br><small>' + escapar(d) + '</small>' : '') + '</td><td>' + c.impresiones
-            + '</td><td>' + c.paginas + '</td><td>' + c.copias + '</td><td>' + c.paginasCopia + '</td><td>'
-            + total + '</td></tr>';
-    });
-    const acciones = '<p><button data-s="' + token + '" onclick="bajarCsv(this)">Descargar CSV (Excel)</button></p>'
-        + formulario(token, 'cero', '<button onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
-            + 'Descargue antes el CSV.\')">Poner a cero</button>');
-    return paginarFilas(token, 'contadores', filas, pagina, (f, pie) => documento('Contadores', cab, mensajeHtml(msg)
-        + '<div class="caja"><p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> pág. (' + t.paginas + ' impresas, '
-        + t.paginasCopia + ' copiadas)</p>'
-        + (lista.length
-            ? '<table><tr><td>Persona</td><td>Impr.</td><td>Pág.</td><td>Copias</td><td>Pág. copia</td><td>Total</td></tr>'
-                + f + '</table>'
-            : 'No hay usuarios ni nada contado.')
-        + pie + '</div><div class="caja">' + acciones + '</div><script src="csv.js"></script>'));
-}
+/*
+ * contadores.js: pide el CSV por partes (el mismo que se descarga) y pinta la tabla.
+ * Columnas del CSV: usuario;nombre;cédula;estado;impr;pág;copias;pág copia;total. Quien
+ * no imprimió nada, en gris. Todo con textContent: nada se interpreta como HTML.
+ */
+const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAttribute("data-s"),L=[];'
+    + 'function e(t,x,c){var n=document.createElement(t);if(x!=null)n.textContent=x;if(c)n.className=c;return n}'
+    + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios ni nada contado."));'
+    + 'L.forEach(function(f){var r=e("tr",null,+f[8]?"":"inactivo"),d=e("td"),x=f[3]=="borrado"?"usuario borrado":f[1]+(f[3]=="desactivado"?" (desactivado)":"");'
+    + 'd.appendChild(e("b",f[0]));if(x){d.appendChild(e("br"));d.appendChild(e("small",x))}r.appendChild(d);'
+    + '[4,5,6,7].forEach(function(i){r.appendChild(e("td",f[i]))});d=e("td");d.appendChild(e("b",f[8]));r.appendChild(d);T.appendChild(r)})}'
+    + 'function p(n){fetch("csv?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
+    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
+    + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>8&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
+    + 'if(+m[1]>=0)p(+m[1]);else pinta()})}p(0)})()';
 
 /*
  * CSV por partes: un CSV con mucha gente no cabe en una respuesta. El navegador pide
@@ -403,10 +427,9 @@ const CSV_JS = 'function bajarCsv(b){var s=b.getAttribute("data-s"),t="",n=0;b.d
 
 /** Campos de nombre completo y cédula, con lo que ya haya escrito (o se estaba escribiendo). */
 function camposDatos(v) {
-    return '<input name="nombreCompleto" placeholder="Nombre y apellidos" size="28" maxlength="'
-        + config.NOMBRE_COMPLETO_MAX + '" value="' + escapar((v && v.nombreCompleto) || '') + '"> '
-        + '<input name="cedula" placeholder="Cédula" size="12" maxlength="20" value="'
-        + escapar((v && v.cedula) || '') + '"> ';
+    return campo('Nombre completo', '<input name="nombreCompleto" size="32" maxlength="' + config.NOMBRE_COMPLETO_MAX
+        + '" value="' + escapar((v && v.nombreCompleto) || '') + '">')
+        + campo('Cédula', '<input name="cedula" size="14" maxlength="20" value="' + escapar((v && v.cedula) || '') + '">');
 }
 
 /** `previo`: lo que se escribió, para no hacérselo repetir si algo no era válido. */
@@ -415,14 +438,13 @@ function paginaNuevo(token, msg, previo) {
     if (n >= config.USUARIOS_MAX && !msg) {
         msg = { ok: false, texto: avisoCapacidad(n) };
     }
-    return documento('Nuevo usuario', enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
-        + '<div class="caja">' + formulario(token, 'alta',
-            '<p><input name="nombre" placeholder="usuario" maxlength="' + config.USUARIO_MAX + '" autocomplete="off" value="'
-            + escapar((previo && previo.nombre) || '') + '"> ' + campoPin('PIN') + '</p><p>' + camposDatos(previo)
-            + '</p><button>Dar de alta</button>')
-        + '<p><small>Usuario: minúsculas, números y . _ - (el Nombre del driver). PIN: '
+    return documento('Nuevo usuario', token, 'usuarios', mensajeHtml(msg) + panel('Datos', formulario(token, 'alta',
+        campo('Usuario', '<input name="nombre" maxlength="' + config.USUARIO_MAX + '" autocomplete="off" value="'
+            + escapar((previo && previo.nombre) || '') + '">')
+        + campo('PIN', campoPin()) + camposDatos(previo) + '<p><button class="p">Dar de alta</button></p>')
+        + '<p class="k">Usuario: minúsculas, números y . _ - (el Nombre del driver). PIN: '
         + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos (la Contraseña del driver). '
-        + 'Nombre y cédula son para saber quién es.</small></p></div>');
+        + 'Nombre y cédula son opcionales.</p>'), ['usuarios', 'Usuarios']);
 }
 
 function paginaUsuario(token, nombre, msg) {
@@ -433,18 +455,17 @@ function paginaUsuario(token, nombre, msg) {
     const c = store.contadorDe(u.nombre);
     const inactivo = u.activo === false;
     const campoNombre = '<input type="hidden" name="nombre" value="' + escapar(u.nombre) + '">';
-    return documento('Usuario ' + u.nombre, enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
-        + '<div class="caja"><p><b>' + escapar(u.nombreCompleto || '(sin nombre completo)') + '</b>'
-        + (u.cedula ? ' · Cédula ' + escapar(u.cedula) : '') + '</p><p>'
-        + (inactivo ? 'Desactivado' : 'Activo') + ' · ' + c.impresiones
-        + ' impresiones, ' + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág.</p>'
+    return documento('Usuario ' + u.nombre, token, 'usuarios', mensajeHtml(msg)
+        + '<p><span class="' + (inactivo ? 'r">desactivado' : 'g">activo') + '</span> ' + c.impresiones + ' impr., '
+        + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág.</p>'
         // Formularios separados: Enter en un campo pulsa el primer botón de SU formulario.
-        + formulario(token, 'cambiar', campoNombre + camposDatos(u) + '<button name="a" value="datos">Guardar datos</button>')
-        + formulario(token, 'cambiar', campoNombre
-            + campoPin('PIN nuevo') + '<button name="a" value="pin">Cambiar PIN</button><p>'
-            + '<button name="a" value="' + (inactivo ? 'activar">Activar' : 'desactivar">Desactivar') + '</button> '
-            + '<button name="a" value="borrar" onclick="return confirm(\'¿Borrar?\')">Borrar</button></p>')
-        + '</div>');
+        + panel('Datos', formulario(token, 'cambiar', campoNombre + camposDatos(u)
+            + '<p><button class="p" name="a" value="datos">Guardar datos</button></p>'))
+        + panel('PIN y estado', formulario(token, 'cambiar', campoNombre + campo('PIN nuevo', campoPin())
+            + '<p><button class="p" name="a" value="pin">Cambiar PIN</button>'
+            + '<button name="a" value="' + (inactivo ? 'activar">Activar' : 'desactivar">Desactivar') + '</button>'
+            + '<button class="x" name="a" value="borrar" onclick="return confirm(\'¿Borrar?\')">Borrar</button></p>')),
+    ['usuarios', 'Usuarios']);
 }
 
 /* ------------------------------------------------------------------ */
@@ -456,6 +477,12 @@ function deAccion(r) {
     return { ok: r.ok, texto: r.texto };
 }
 
+/** Botón de un formulario de varias acciones (name="a"). */
+function botonA(valor, texto, clase, confirmar) {
+    return '<button' + (clase ? ' class="' + clase + '"' : '') + ' name="a" value="' + valor + '"'
+        + (confirmar ? ' onclick="return confirm(\'' + confirmar + '\')"' : '') + '>' + texto + '</button>';
+}
+
 /**
  * Un solo formulario con un botón por acción (name="a"): cada ajuste es un botón que
  * lo cambia al otro valor, igual que en el panel.
@@ -463,54 +490,52 @@ function deAccion(r) {
 function paginaAjustes(token, msg) {
     const a = store.ajustes();
     const b = cerradura.impresionBloqueada();
-    const boton = (valor, texto, confirmar) => '<button name="a" value="' + valor + '"'
-        + (confirmar ? ' onclick="return confirm(\'' + confirmar + '\')"' : '') + '>' + texto + '</button> ';
     const minutos = config.MINUTOS_SESION_OPCIONES.map((m) => '<option' + (m === a.minutosSesion ? ' selected' : '')
         + '>' + m + '</option>').join('');
-    const cab = '<span>' + enlace(token, 'usuarios', '', 'Usuarios') + ' · ' + enlace(token, 'salir', '', 'Salir') + '</span>';
-    return documento('Ajustes', cab, mensajeHtml(msg) + '<div class="caja">' + formulario(token, 'ajuste',
-        '<p>Modo: <b>' + (a.modo === 'retencion' ? 'retención' : 'sesión') + '</b> '
-        + boton('modo', a.modo === 'retencion' ? 'Pasar a sesión' : 'Pasar a retención') + '</p>'
-        + '<p>Bloqueo: <b>' + (a.bloqueoActivo ? 'ENCENDIDO' : 'apagado') + '</b> '
-        + boton('bloqueo', a.bloqueoActivo ? 'Apagar' : 'Encender', a.bloqueoActivo ? '¿Apagar? Cualquiera podrá imprimir.' : '')
-        + '<br><small>Impresión desde PC: ' + (b === null ? 'no se sabe' : b ? 'bloqueada' : 'abierta') + '</small></p>'
-        + '<p>Copia: <b>' + (a.bloquearCopia ? 'con PIN' : 'libre') + '</b> '
-        + boton('copia', a.bloquearCopia ? 'Dejar libre' : 'Pedir PIN') + '</p>'
-        + '<p>Sesión: <select name="minutos">' + minutos + '</select> min ' + boton('minutos', 'Guardar') + '</p>'
-        + '<p>' + boton('desbloquear', 'Desbloquear equipo', '¿Desbloquear todo y apagar el bloqueo?') + '</p>')
-        + '</div><div class="caja">' + enlace(token, 'copia', '', 'Copia de seguridad') + ' · '
-        + enlace(token, 'pinadmin', '', 'PIN de administrador') + ' · '
-        + enlace(token, 'respaldo', '', 'Respaldo automático (PC)') + ' · '
-        + enlace(token, 'capacidad', '', 'Capacidad') + '</div>');
+    const fila = (nombre, valor, boton) => '<tr><th>' + nombre + '</th><td><b>' + valor + '</b> ' + boton + '</td></tr>';
+    return documento('Ajustes', token, 'ajustes', mensajeHtml(msg) + panel('Protección', formulario(token, 'ajuste',
+        '<table>'
+        + fila('Modo', a.modo === 'retencion' ? 'retención' : 'sesión',
+            botonA('modo', a.modo === 'retencion' ? 'Pasar a sesión' : 'Pasar a retención'))
+        + fila('Bloqueo', a.bloqueoActivo ? 'ENCENDIDO' : 'apagado', a.bloqueoActivo
+            ? botonA('bloqueo', 'Apagar', 'x', '¿Apagar? Imprimirá cualquiera.') : botonA('bloqueo', 'Encender', 'p'))
+        + fila('Copia', a.bloquearCopia ? 'con PIN' : 'libre', botonA('copia', a.bloquearCopia ? 'Dejar libre' : 'Pedir PIN'))
+        + fila('Sesión', '<select name="minutos">' + minutos + '</select> min', botonA('minutos', 'Guardar'))
+        // En retención la impresión desde PC está siempre abierta (la vigila el guardián):
+        // sólo informa en modo sesión.
+        + '</table><p class="k">' + (a.modo === 'sesion' ? 'Impresión desde PC: ' + (b === null ? '¿?' : b ? 'bloqueada' : 'abierta') + '. ' : '')
+        + botonA('desbloquear', 'Desbloquear equipo', 'x', '¿Desbloquear todo?') + '</p>'))
+        // Un formulario GET con un botón por destino: el token va una vez, no cuatro.
+        + panel('Mantenimiento', '<form><input type="hidden" name="s" value="' + token + '">'
+            + [['copia', 'Copia de seguridad'], ['pinadmin', 'PIN admin'], ['respaldo', 'Respaldo al PC'],
+                ['capacidad', 'Capacidad']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
+            + '</form>'));
 }
 
 function paginaPinAdmin(token, msg) {
-    const campo = (nombre, texto) => '<p>' + texto + '<br><input type="password" name="' + nombre
-        + '" size="10" inputmode="numeric"></p>';
-    return documento('PIN de administrador', enlace(token, 'ajustes', '', 'Volver'), mensajeHtml(msg)
-        + '<div class="caja">' + formulario(token, 'pinadmin', campo('actual', 'PIN actual')
-            + campo('nuevo', 'PIN nuevo (' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos)')
-            + campo('repetir', 'Repita el PIN nuevo') + '<button>Cambiar</button>')
-        + '<p><small>Es el mismo PIN para el panel de la impresora y para esta página. '
-        + 'Si se olvida, sólo se recupera reinstalando la app (se pierden los datos).</small></p></div>');
+    return documento('PIN de administrador', token, 'ajustes', mensajeHtml(msg) + panel('Cambiar PIN',
+        formulario(token, 'pinadmin', campo('PIN actual', campoPin('actual'))
+            + campo('PIN nuevo (' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos)', campoPin('nuevo'))
+            + campo('Repita el PIN nuevo', campoPin('repetir')) + '<p><button class="p">Cambiar</button></p>')
+        + '<p class="k">Vale para el panel de la impresora y para esta página. '
+        + 'Si se olvida, sólo se recupera reinstalando la app (se pierden los datos).</p>'), ['ajustes', 'Ajustes']);
 }
 
 function paginaRespaldo(token, msg) {
     const e = respaldo.estado();
     const u = e.ultimo;
-    const boton = (valor, texto, confirmar) => '<button name="a" value="' + valor + '"'
-        + (confirmar ? ' onclick="return confirm(\'' + confirmar + '\')"' : '') + '>' + texto + '</button> ';
-    return documento('Respaldo automático', enlace(token, 'ajustes', '', 'Volver') + ' · ' + enlace(token, 'respaldo', '', 'Actualizar'),
-        mensajeHtml(msg) + '<div class="caja"><p>PC: <b>' + (e.destino ? escapar(e.destino) + ':' + config.RESPALDO_PUERTO : 'ninguno (apagado)')
+    return documento('Respaldo automático', token, 'ajustes', mensajeHtml(msg) + panel('Estado', '<p>PC: <b>'
+        + (e.destino ? escapar(e.destino) + ':' + config.RESPALDO_PUERTO : 'ninguno (apagado)')
         + '</b><br>Último: <span class="' + (u.ok === null ? '' : u.ok ? 'ok' : 'error') + '">'
         + escapar((u.cuando ? u.cuando + ' · ' : '') + u.detalle) + '</span>'
-        + (e.enCurso ? '<br><b>En curso…</b> pulse Actualizar en unos segundos.' : '') + '</p>'
-        + formulario(token, 'respaldo', '<p>IP del PC: <input name="ip" size="15" value="' + escapar(e.destino || '') + '"> '
-            + boton('ip', 'Guardar') + boton('apagar', 'Apagar') + '</p><p>'
-            + boton('subir', 'Respaldar ahora')
-            + boton('restaurar', 'Restaurar último respaldo', '¿Devolver los usuarios del último respaldo, con su PIN?')
-            + boton('altas', 'Alta de usuarios.json', '¿Dar de alta a la gente escrita en usuarios.json del PC?') + '</p>')
-        + '<p><small>En el PC: Respaldo impresora.bat, abierto. El respaldo lleva los PIN: guárdelo como tal.</small></p></div>');
+        + (e.enCurso ? '<br><b>En curso…</b>' : '') + '</p>' + enlace(token, 'respaldo', '', 'Actualizar', 'b'))
+        + panel('PC y acciones', formulario(token, 'respaldo', campo('IP del PC', '<input name="ip" size="15" value="'
+            + escapar(e.destino || '') + '">') + '<p>' + botonA('ip', 'Guardar', 'p') + botonA('apagar', 'Apagar') + '</p><p>'
+            + botonA('subir', 'Respaldar ahora')
+            + botonA('restaurar', 'Restaurar último', '', '¿Devolver los usuarios del último respaldo, con su PIN?')
+            + botonA('altas', 'Alta de usuarios.json', '', '¿Dar de alta a la gente de usuarios.json del PC?') + '</p>')
+            + '<p class="k">En el PC: Respaldo impresora.bat, abierto. Lleva los PIN: guárdelo como tal.</p>'),
+    ['ajustes', 'Ajustes']);
 }
 
 /** Acciones de /ajuste. */
@@ -750,14 +775,15 @@ export function trozoSubida(token, d) {
 }
 
 function paginaCopia(token, msg) {
-    return documento('Copia de seguridad', enlace(token, 'ajustes', '', 'Volver'), mensajeHtml(msg)
-        + '<div class="caja"><p><b>Descargar</b> guarda en este PC una copia con usuarios, PIN, nombre, cédula, '
-        + 'contadores y ajustes.</p><button data-s="' + token + '" onclick="bajarCopia(this)">Descargar copia</button></div>'
-        + '<div class="caja"><p><b>Subir</b> deja la impresora como estaba en esa copia (p. ej. tras reinstalar). '
-        + 'No borra a nadie.</p><input type="file" id="f" accept=".json"> '
-        + '<button data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p></div>'
-        + '<p><small>La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como un documento '
-        + 'confidencial.</small></p><script src="copia-bajar.js"></script><script src="subir.js"></script><script src="copia-subir.js"></script>');
+    return documento('Copia de seguridad', token, 'ajustes', mensajeHtml(msg)
+        + panel('Descargar', '<p>Guarda en este PC una copia con usuarios, PIN, nombre, cédula, contadores y ajustes.</p>'
+            + '<button class="p" data-s="' + token + '" onclick="bajarCopia(this)">Descargar copia</button>')
+        + panel('Subir', '<p>Deja la impresora como estaba en esa copia (p. ej. tras reinstalar). No borra a nadie.</p>'
+            + '<p><input type="file" id="f" accept=".json"></p>'
+            + '<button class="p" data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p>')
+        + '<p class="k">La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como confidencial.</p>'
+        + '<script src="copia-bajar.js"></script><script src="subir.js"></script><script src="copia-subir.js"></script>',
+    ['ajustes', 'Ajustes']);
 }
 
 /*
@@ -811,15 +837,13 @@ function paginaCapacidad(token, msg) {
         + '</td><td>' + (r.msGuardar === null ? '-' : r.msGuardar + ' ms') + '</td><td>'
         + (r.msLeer === null ? '-' : r.msLeer + ' ms') + '</td><td>' + (r.ok ? 'bien' : escapar(r.error || 'falla'))
         + '</td></tr>').join('');
-    return documento('Capacidad', enlace(token, 'ajustes', '', 'Volver') + ' · ' + enlace(token, 'capacidad', '', 'Actualizar'),
-        mensajeHtml(msg) + '<div class="caja"><p>Mide cuántos usuarios aguanta la impresora: guarda datos de prueba '
-        + 'cada vez más grandes (en un fichero aparte, sus datos no se tocan) y cronometra. Mientras dura (≈1 min) '
-        + 'la impresora puede ir lenta: que nadie imprima.</p>'
-        + (e.enCurso ? '<p><b>En curso…</b> pulse Actualizar.</p>'
-            : formulario(token, 'capacidad', '<button>Empezar la prueba</button>'))
+    return documento('Capacidad', token, 'ajustes', mensajeHtml(msg) + panel('Prueba',
+        '<p>Guarda datos de prueba crecientes aparte (los suyos no se tocan) y cronometra. ≈1 min: que nadie imprima.</p>'
+        + (e.enCurso ? '<p><b>En curso…</b> ' + enlace(token, 'capacidad', '', 'Actualizar', 'b') + '</p>'
+            : formulario(token, 'capacidad', '<button class="p">Empezar la prueba</button>'))
         + (e.fin ? '<p><b>Resultado:</b> ' + escapar(e.fin) + '</p>' : '')
-        + (filas ? '<table><tr><td>Usuarios</td><td>Tamaño</td><td>Guardar</td><td>Leer</td><td></td></tr>' + filas + '</table>' : '')
-        + '</div>');
+        + (filas ? '<div class="t"><table><tr><th>Usuarios</th><th>Tamaño</th><th>Guardar</th><th>Leer</th><th></th></tr>'
+            + filas + '</table></div>' : '')), ['ajustes', 'Ajustes']);
 }
 
 /* ------------------------------------------------------------------ */
@@ -834,16 +858,15 @@ function paginaCapacidad(token, msg) {
  */
 
 function paginaImportar(token, msg) {
-    return documento('Importar usuarios', enlace(token, 'usuarios', '', 'Volver'), mensajeHtml(msg)
-        + '<div class="caja"><p>1. <button data-s="' + token + '" onclick="bajarPlantilla(this)">Descargar plantilla</button> '
-        + 'y rellénela en Excel (una persona por fila).</p>'
-        + '<p>2. Elija el fichero (.xlsx o .csv): <input type="file" id="f" accept=".xlsx,.csv"> '
-        + '<button onclick="revisar()">Revisar</button></p>'
-        + '<p>3. <button id="b" data-s="' + token + '" disabled onclick="importar(this)">Importar</button> '
-        + '<span id="e"></span></p><div id="v"></div>'
-        + '<p><small>Los que ya existen se saltan sin cambiarlos. El Excel lleva los PIN en claro: '
-        + 'bórrelo o guárdelo como confidencial.</small></p></div>'
-        + cargador(['tabla', 'subir', 'importar']));
+    return documento('Importar usuarios', token, 'usuarios', mensajeHtml(msg)
+        + panel('1. Plantilla', '<p>Descárguela y rellénela en Excel, una persona por fila.</p>'
+            + '<button data-s="' + token + '" onclick="bajarPlantilla(this)">Descargar plantilla</button>')
+        + panel('2. Revisar', '<p><input type="file" id="f" accept=".xlsx,.csv"></p><button onclick="revisar()">Revisar</button>'
+            + '<div class="t" id="v"></div>')
+        + panel('3. Importar', '<button class="p" id="b" data-s="' + token + '" disabled onclick="importar(this)">Importar</button> '
+            + '<span id="e"></span><p class="k">Los que ya existen se saltan sin cambiarlos. El Excel lleva los PIN en claro: '
+            + 'bórrelo o guárdelo como confidencial.</p>')
+        + cargador(['tabla', 'subir', 'importar']), ['usuarios', 'Usuarios']);
 }
 
 /** La plantilla (src/plantilla.js), en trozos de base64 que caben en una respuesta. */
@@ -896,7 +919,7 @@ const IMPORTAR_JS = 'var L=[];function $(i){return document.getElementById(i)}'
     + 'function revisar(){var f=$("f").files[0],e=$("e"),b=$("b");b.disabled=true;L=[];if(!f)return e.textContent="Elija el fichero.";e.className="";e.textContent="Leyendo…";'
     + 'Promise.all([leerTabla(f),existentes(b.getAttribute("data-s"))]).then(function(r){var R=r[0],E=r[1],K=[0,1,2,3],U={},C={},nuevos=0,malos=0,ya=0,cab=R[0]&&R[0].c.join("|").toLowerCase();'
     + 'if(cab&&/usuario/.test(cab)){K=["usuario","pin","nombre","c.dula"].map(function(k){return R[0].c.findIndex(function(x){return new RegExp(k).test(String(x||"").toLowerCase())})});R=R.slice(1)}'
-    + 'var h="<table><tr><td>Fila</td><td>Usuario</td><td>Nombre</td><td></td></tr>",libres=' + config.USUARIOS_MAX + '-Object.keys(E).length;'
+    + 'var h="<table><tr><th>Fila</th><th>Usuario</th><th>Nombre</th><th>Estado</th></tr>",libres=' + config.USUARIOS_MAX + '-Object.keys(E).length;'
     + 'R.forEach(function(w){var g=function(i){return i<0?"":String(w.c[i]==null?"":w.c[i]).trim()},u=g(K[0]).toLowerCase(),p=g(K[1]),n=g(K[2]).replace(/\\s+/g," "),c=g(K[3]).replace(/[\\s.-]/g,"").toUpperCase(),m="";'
     + 'if(!u&&!p&&!n&&!c)return;if(!/^[a-z0-9._-]{1,' + config.USUARIO_MAX + '}$/.test(u))m="usuario no válido";'
     + 'else if(!/^[0-9]{' + config.PIN_MIN + ',' + config.PIN_MAX + '}$/.test(p))m="PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' números";'
@@ -919,8 +942,8 @@ export function atenderRuta(p, ahora) {
     const d = p.datos;
     const html = (cuerpo) => ({ codigo: 200, tipo: 'text/html; charset=utf-8', cuerpo });
 
-    if (p.ruta === '/estilo.css') {
-        return { codigo: 200, tipo: 'text/css; charset=utf-8', cuerpo: ESTILO };
+    if (p.ruta === '/estilo.css' || p.ruta === '/estilo2.css') {
+        return { codigo: 200, tipo: 'text/css; charset=utf-8', cuerpo: p.ruta === '/estilo.css' ? ESTILO : ESTILO2 };
     }
     if (p.ruta === '/js') {
         const js = { tabla: TABLA_JS, importar: IMPORTAR_JS, subir: SUBIR_JS }[d.n];
@@ -933,6 +956,9 @@ export function atenderRuta(p, ahora) {
     if (p.ruta === '/copia-bajar.js' || p.ruta === '/copia-subir.js') {
         return { codigo: 200, tipo: 'text/javascript; charset=utf-8',
             cuerpo: p.ruta === '/copia-bajar.js' ? COPIA_BAJAR_JS : COPIA_SUBIR_JS };
+    }
+    if (p.ruta === '/contadores.js') {
+        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CONTADORES_JS };
     }
     if (p.ruta === '/lista.js') {
         return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: LISTA_JS };
@@ -983,7 +1009,7 @@ export function atenderRuta(p, ahora) {
         return html(paginaLogin({ ok: true, texto: 'Sesión cerrada.' }));
     }
     if (p.ruta === '/contadores') {
-        return html(paginaContadores(token, null, d.p));
+        return html(paginaContadores(token, null));
     }
     if (p.ruta === '/csv') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteCsv(d.desde) };
@@ -1123,8 +1149,9 @@ export function atenderRuta(p, ahora) {
     return html(paginaUsuarios(token, null));
 }
 
-const DEMASIADO = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
-    + '<p>La respuesta no cabe en lo que la impresora puede enviar. Vuelva atrás.</p></body></html>';
+const DEMASIADO = '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" '
+    + 'content="width=device-width,initial-scale=1"><link rel="stylesheet" href="' + BASE + '/estilo.css"></head><body>'
+    + '<main><p class="error">La respuesta no cabe en lo que la impresora puede enviar. Vuelva atrás.</p></main></body></html>';
 
 function atender(req) {
     peticiones++;
