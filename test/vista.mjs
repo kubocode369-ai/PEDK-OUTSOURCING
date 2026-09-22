@@ -19,7 +19,7 @@ http.createServer((req, res) => {
   req.on('data', (c) => body += c);
   req.on('end', () => {
     const r = pedk.net.http.receiveData({ url: req.url, method: req.method, body });
-    res.writeHead(r.code, { 'Content-Type': r.headers.v });
+    res.writeHead(r.code, Object.assign({ 'Content-Type': r.headers.v }, r.headers.extra));
     res.end(r.body);
   });
 }).listen(8123, () => {

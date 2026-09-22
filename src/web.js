@@ -173,8 +173,9 @@ function sesionValida(token, ahora) {
  *   .p botón principal (rojo)   .x botón peligroso   .w aviso amarillo   p.ok / p.error mensajes   .t tabla deslizable
  *   .g / .r etiqueta verde / gris   .v "‹ Volver"   .k pie pequeño
  */
-// En dos ficheros (juntos pasan del tope); el primero trae al segundo con @import.
-const ESTILO = '@import "estilo2.css";:root{--r:#b03}*{box-sizing:border-box}'
+// En dos ficheros (juntos pasan del tope); el primero trae al segundo con @import (ver la
+// ruta /estilo.css, que le añade la versión).
+const ESTILO = ':root{--r:#b03}*{box-sizing:border-box}'
     + 'body{margin:0;font:15px/1.45 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
     + 'header{background:#fff;padding:12px 16px;border-bottom:4px double var(--r)}'
     + 'header b{color:var(--r);font-size:19px;letter-spacing:.5px}'
@@ -208,6 +209,32 @@ const ESTILO2 = ''
     + '#t td{display:inline-block;border:0;padding:2px 8px 2px 0}#t td:last-child{display:flex;gap:6px}'
     + '#t td:last-child button{flex:1;margin:4px 0;padding:8px 4px}}';
 
+/*
+ * VELOCIDAD (medido el 22-09-2026): cada petición a la app tarda ~1,15 s pase lo que pase
+ * (hasta /eco, que no hace nada; la web de Pantum, servida por el firmware, 0,03 s), y
+ * la impresora las atiende DE UNA EN UNA. Una página tarda, por tanto, lo que sumen sus
+ * peticiones. Para que sean las menos posibles:
+ *  - estilos y scripts se piden con su versión (?v=<huella de su contenido>) y con
+ *    Cache-Control de un año: el navegador los guarda y no los vuelve a pedir; al
+ *    actualizar la app cambia la huella y los pide de nuevo.
+ *  - los datos de las listas van DENTRO de la página si caben (data-d), sin otra petición.
+ */
+let version = null;
+
+/** Huella de todos los ficheros estáticos: cambia cuando cambia cualquiera. */
+function versionEstaticos() {
+    if (!version) {
+        version = store.huella('#estaticos', ESTILO + ESTILO2 + LISTA_JS + CONTADORES_JS + CSV_JS + COPIA_BAJAR_JS
+            + COPIA_SUBIR_JS + SUBIR_JS + TABLA_JS + IMPORTAR_JS).slice(0, 8);
+    }
+    return version;
+}
+
+/** Dirección de un fichero estático, con su versión. */
+function estatico(ruta) {
+    return ruta + '?v=' + versionEstaticos();
+}
+
 /** Bytes que ocupa el texto en UTF-8: el tope es de bytes, no de caracteres. */
 export function bytesUtf8(s) {
     let n = 0;
@@ -230,7 +257,7 @@ const PESTANAS = [['usuarios', 'Usuarios'], ['contadores', 'Contadores'], ['ajus
 function documento(titulo, token, activa, cuerpo, volver) {
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
         + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/">'
-        + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="estilo.css"></head><body>'
+        + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="' + estatico('estilo.css') + '"></head><body>'
         + '<header><b>Impresión con PIN</b></header>'
         + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
             + (p[0] === activa ? ' class="on"' : '') + '>' + p[1] + '</a>').join('') + '</nav>' : '')
@@ -289,11 +316,23 @@ function paginaUsuarios(token, msg) {
     const aviso = (store.pinAdminDeFabrica()
         ? '<p class="w">PIN de administrador de fábrica: cámbielo en Ajustes.</p>' : '')
         + (n >= config.USUARIOS_AVISO ? '<p class="w">' + avisoCapacidad(n) + '</p>' : '');
-    return documento('Usuarios (' + n + ')', token, 'usuarios', aviso + mensajeHtml(msg)
+    const armar = (datos) => documento('Usuarios (' + n + ')', token, 'usuarios', aviso + mensajeHtml(msg)
         + '<p>' + enlace(token, 'nuevo', '', '+ Nuevo usuario', 'b p') + enlace(token, 'importar', '', 'Importar Excel', 'b') + '</p>'
-        + '<div class="c t">' + formulario(token, 'lista', '<table id="t" data-s="' + token
-            + '"><tr><th>Usuario</th><th>Estado</th><th></th></tr></table>', BORRAR_CONFIRMA)
-        + '</div><script src="lista.js"></script>');
+        + '<div class="c t">' + formulario(token, 'lista', '<table id="t" data-s="' + token + '"' + conDatos(datos)
+            + '><tr><th>Usuario</th><th>Estado</th><th></th></tr></table>', BORRAR_CONFIRMA)
+        + '</div><script src="' + estatico('lista.js') + '"></script>');
+    return cabeOno(armar, parteUsuarios(0));
+}
+
+/** Atributo con los datos de una lista, para que no haga falta pedirlos aparte. */
+function conDatos(datos) {
+    return datos === null ? '' : ' data-d="' + escapar(datos) + '"';
+}
+
+/** La página con sus datos dentro si caben en el tope; si no, sin ellos (el script los pide). */
+function cabeOno(armar, datos) {
+    const con = armar(datos);
+    return bytesUtf8(con) <= config.WEB_MAX_BYTES ? con : armar(null);
 }
 
 /** Lo que se le dice al administrador cuando hay muchos usuarios (ver config.USUARIOS_*). */
@@ -333,10 +372,11 @@ const LISTA_JS = '(function(){var T=document.getElementById("t"),s=T.getAttribut
     + 'd=e("td");d.appendChild(b("e "+f[0],"Editar"));'
     + 'd.appendChild(b((a?"d ":"a ")+f[0],a?"Desactivar":"Activar"));d.appendChild(b("b "+f[0],"Borrar","x"));'
     + 'r.appendChild(d);T.appendChild(r)})}'
-    + 'function p(n){fetch("usuarios.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
-    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
-    + 'x.slice(m[0].length).split("\\n").forEach(function(l){if(l)L.push(l)});if(+m[1]>=0)p(+m[1]);else pinta()})}'
-    + 'p(0)})()';
+    + 'function q(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
+    + 'x.slice(m[0].length).split("\\n").forEach(function(l){if(l)L.push(l)});if(+m[1]>=0)p(+m[1]);else pinta()}'
+    + 'function p(n){fetch("usuarios.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(q)}'
+    // Los datos vienen en la página (data-d) si cabían: una petición menos.
+    + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)})()';
 
 /** Cómo se llama en pantalla y en el CSV a quien no se identificó. */
 function persona(quien) {
@@ -347,14 +387,14 @@ function paginaContadores(token, msg) {
     const t = store.totales();
     // La tabla la pinta el navegador con los datos del CSV (contadores.js): así salen todos
     // en una página, como en Usuarios. En la impresora sólo cabían unas pocas filas.
-    return documento('Contadores', token, 'contadores', mensajeHtml(msg)
+    return cabeOno((datos) => documento('Contadores', token, 'contadores', mensajeHtml(msg)
         + '<p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> páginas (' + t.paginas + ' impresas, '
         + t.paginasCopia + ' copiadas)</p><div style="margin-bottom:10px"><button class="p" data-s="' + token + '" onclick="bajarCsv(this)">Descargar CSV (Excel)</button>'
         + formulario(token, 'cero', '<button class="x" onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
             + 'Descargue antes el CSV.\')">Poner a cero</button>', ' style="display:inline"') + '</div>'
-        + '<div class="c t"><table id="c" data-s="' + token + '"><tr><th>Persona</th><th>Impr.</th><th>Pág.</th>'
+        + '<div class="c t"><table id="c" data-s="' + token + '"' + conDatos(datos) + '><tr><th>Persona</th><th>Impr.</th><th>Pág.</th>'
         + '<th>Copias</th><th>Pág. copia</th><th>Total</th></tr></table></div>'
-        + '<script src="csv.js"></script><script src="contadores.js"></script>');
+        + '<script src="' + estatico('csv.js') + '"></script><script src="' + estatico('contadores.js') + '"></script>'), parteCsv(0));
 }
 
 /*
@@ -368,10 +408,11 @@ const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAtt
     + 'L.forEach(function(f){var r=e("tr",null,+f[8]?"":"inactivo"),d=e("td"),x=f[3]=="borrado"?"usuario borrado":f[1]+(f[3]=="desactivado"?" (desactivado)":"");'
     + 'd.appendChild(e("b",f[0]));if(x){d.appendChild(e("br"));d.appendChild(e("small",x))}r.appendChild(d);'
     + '[4,5,6,7].forEach(function(i){r.appendChild(e("td",f[i]))});d=e("td");d.appendChild(e("b",f[8]));r.appendChild(d);T.appendChild(r)})}'
-    + 'function p(n){fetch("csv?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
-    + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
+    + 'function q(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
     + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>8&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
-    + 'if(+m[1]>=0)p(+m[1]);else pinta()})}p(0)})()';
+    + 'if(+m[1]>=0)p(+m[1]);else pinta()}'
+    + 'function p(n){fetch("csv?s="+s+"&desde="+n).then(function(r){return r.text()}).then(q)}'
+    + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)})()';
 
 /*
  * CSV por partes: un CSV con mucha gente no cabe en una respuesta. El navegador pide
@@ -588,7 +629,7 @@ export function parteTexto(texto, desde) {
  * pide cada script con /js?n=<nombre>&desde=..., los junta y los ejecuta de una vez.
  */
 function cargador(nombres) {
-    return '<script>(function(N){var t="";function p(k,d){fetch("js?n="+N[k]+"&desde="+d).then(function(r){return r.text()})'
+    return '<script>(function(N){var t="";function p(k,d){fetch("' + estatico('js') + '&n="+N[k]+"&desde="+d).then(function(r){return r.text()})'
         + '.then(function(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);t+=x.slice(m[0].length);if(+m[1]>=0)return p(k,+m[1]);'
         + 't+="\\n";if(k+1<N.length)return p(k+1,0);var s=document.createElement("script");s.text=t;document.head.appendChild(s)})}'
         + 'p(0,0)})(' + JSON.stringify(nombres) + ')</script>';
@@ -733,7 +774,7 @@ function paginaCopia(token, msg) {
             + '<p><input type="file" id="f" accept=".json"></p>'
             + '<button class="p" data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p>')
         + '<p class="k">La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como confidencial.</p>'
-        + '<script src="copia-bajar.js"></script><script src="subir.js"></script><script src="copia-subir.js"></script>',
+        + ['copia-bajar.js', 'subir.js', 'copia-subir.js'].map((f) => '<script src="' + estatico(f) + '"></script>').join(''),
     ['ajustes', 'Ajustes']);
 }
 
@@ -873,29 +914,22 @@ export function atenderRuta(p, ahora) {
     const d = p.datos;
     const html = (cuerpo) => ({ codigo: 200, tipo: 'text/html; charset=utf-8', cuerpo });
 
-    if (p.ruta === '/estilo.css' || p.ruta === '/estilo2.css') {
-        return { codigo: 200, tipo: 'text/css; charset=utf-8', cuerpo: p.ruta === '/estilo.css' ? ESTILO : ESTILO2 };
+    // Estáticos: iguales para todos y versionados, así que el navegador los guarda (r.cache).
+    const js = 'text/javascript; charset=utf-8';
+    const estaticos = {
+        '/estilo.css': ['text/css; charset=utf-8', () => '@import "' + estatico('estilo2.css') + '";' + ESTILO],
+        '/estilo2.css': ['text/css; charset=utf-8', () => ESTILO2],
+        '/subir.js': [js, () => SUBIR_JS], '/copia-bajar.js': [js, () => COPIA_BAJAR_JS],
+        '/copia-subir.js': [js, () => COPIA_SUBIR_JS], '/contadores.js': [js, () => CONTADORES_JS],
+        '/lista.js': [js, () => LISTA_JS], '/csv.js': [js, () => CSV_JS],
+    }[p.ruta];
+    if (estaticos) {
+        return { codigo: 200, tipo: estaticos[0], cuerpo: estaticos[1](), cache: true };
     }
     if (p.ruta === '/js') {
-        const js = { tabla: TABLA_JS, importar: IMPORTAR_JS, subir: SUBIR_JS }[d.n];
-        return js ? { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteTexto(js, d.desde) }
+        const trozo = { tabla: TABLA_JS, importar: IMPORTAR_JS, subir: SUBIR_JS }[d.n];
+        return trozo ? { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: parteTexto(trozo, d.desde), cache: true }
             : { codigo: 404, tipo: 'text/plain', cuerpo: 'no existe' };
-    }
-    if (p.ruta === '/subir.js') {
-        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: SUBIR_JS };
-    }
-    if (p.ruta === '/copia-bajar.js' || p.ruta === '/copia-subir.js') {
-        return { codigo: 200, tipo: 'text/javascript; charset=utf-8',
-            cuerpo: p.ruta === '/copia-bajar.js' ? COPIA_BAJAR_JS : COPIA_SUBIR_JS };
-    }
-    if (p.ruta === '/contadores.js') {
-        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CONTADORES_JS };
-    }
-    if (p.ruta === '/lista.js') {
-        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: LISTA_JS };
-    }
-    if (p.ruta === '/csv.js') {
-        return { codigo: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: CSV_JS };
     }
     if (p.ruta === '/eco') {
         return { codigo: 200, tipo: 'text/plain; charset=utf-8', cuerpo: 'ruta=' + p.ruta + ' metodo=' + p.metodo
@@ -1086,7 +1120,12 @@ function atender(req) {
         r = { codigo: 500, tipo: 'text/html; charset=utf-8', cuerpo: DEMASIADO };
     }
     const h = http();
-    return new h.Response(r.codigo, new h.Headers('Content-Type', r.tipo), r.cuerpo);
+    const cab = new h.Headers('Content-Type', r.tipo);
+    // Estáticos: que el navegador los guarde (van versionados, ver versionEstaticos).
+    if (r.cache && typeof cab.set === 'function') {
+        cab.set('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+    return new h.Response(r.codigo, cab, r.cuerpo);
 }
 
 /** Se engancha al servidor web del equipo. Nunca lanza: si no hay API, lo dice. */

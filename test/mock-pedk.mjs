@@ -173,7 +173,7 @@ export function makePedk(opts = {}) {
     const peticiones = [];
     const red = {
         http: {
-            Headers: function (k, v) { this.k = k; this.v = v; },
+            Headers: function (k, v) { this.k = k; this.v = v; this.extra = {}; this.set = (x, y) => { this.extra[x] = y; }; },
             Response: function (code, headers, body) { this.code = code; this.headers = headers; this.body = body; },
             receiveData: function () {},
             RequestBody: function (data) { this.data = data; },

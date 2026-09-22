@@ -1325,7 +1325,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         store.agregarUsuario('ana', '4321', { nombreCompleto: 'Ana Original' });
         const tI = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
         const pagI = pedir('/importar', 'GET', 's=' + tI).body;
-        check(tipo + ': la página de importar cabe y carga sus scripts', web.bytesUtf8(pagI) <= config.WEB_MAX_BYTES && /js\?n=/.test(pagI));
+        check(tipo + ': la página de importar cabe y carga sus scripts', web.bytesUtf8(pagI) <= config.WEB_MAX_BYTES && /js\?v=[0-9a-f]+&n=/.test(pagI));
         const nav = await paginaImportarEn(tI, archivoDe(nombreFx, fx(nombreFx)));
         check(tipo + ': los scripts llegan por partes que caben', nav.mayorParte <= config.WEB_MAX_BYTES, nav.mayorParte);
         nav.fn.revisar();
@@ -1400,6 +1400,50 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             store.usuarios().length === 1000 && navG.estado.className === 'ok', navG.estado.textContent);
         check('  y en ' + (comprimir ? 'menos de 200' : 'menos de ' + config.WEB_SUBIDA_MAX_TROZOS) + ' envíos',
             navG.posts.length < (comprimir ? 200 : config.WEB_SUBIDA_MAX_TROZOS), navG.posts.length);
+    }
+
+    // VELOCIDAD: cada petición cuesta ~1,15 s en el equipo y van de una en una (medido).
+    {
+        equipo();
+        web._reiniciar();
+        web.instalar();
+        [['ana', 'Ana Ruiz'], ['beto', 'Beto Gil'], ['caro', 'Carolina Paz']].forEach(([n, c]) => store.agregarUsuario(n, '1234', { nombreCompleto: c }));
+        store.contar('ana', { tipo: 'PRINT', paginas: 3 });
+        const tV = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
+        const recibir = (r, m, b) => mock.pedk.net.http.receiveData({ url: '/pedk/app_notify/' + config.WEB_APP + r, method: m || 'GET', body: b || '' });
+        const pag = recibir('/usuarios', 'GET', 's=' + tV);
+        const refs = pag.body.match(/(estilo\.css|lista\.js)\?v=[0-9a-f]{8}/g) || [];
+        check('estilos y scripts se piden con su versión', refs.length === 2, refs.join(' '));
+        const css = recibir('/estilo.css');
+        check('y se sirven con caché de larga duración', /max-age=31536000/.test(css.headers.extra['Cache-Control'] || '')
+            && /max-age/.test(recibir('/lista.js').headers.extra['Cache-Control'] || '')
+            && /@import "estilo2\.css\?v=[0-9a-f]{8}"/.test(css.body));
+        check('las páginas con datos NO se guardan en caché', !pag.headers.extra['Cache-Control']);
+        // Los datos de la lista vienen dentro de la página: el script no pide nada más.
+        const dd = (/data-d="([^"]*)"/.exec(pag.body) || [])[1];
+        check('la lista de usuarios viene dentro de la página si cabe', !!dd && /SIGUIENTE;-1/.test(dd));
+        const des = (t) => t.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+        const el = (tag) => ({ tag, children: [], textContent: '', className: '', attrs: {},
+            appendChild(c) { this.children.push(c); return c; }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; } });
+        let pedidas = 0;
+        for (const [js, id, re] of [['/lista.js', 't', /data-d="([^"]*)"/], ['/contadores.js', 'c', /data-d="([^"]*)"/]]) {
+            const pagina = js === '/lista.js' ? pag.body : recibir('/contadores', 'GET', 's=' + tV).body;
+            const T = el('table');
+            T.attrs['data-s'] = tV;
+            T.attrs['data-d'] = des((re.exec(pagina) || [])[1] || '');
+            const ctx = { document: { getElementById: () => T, createElement: el },
+                fetch: () => { pedidas++; return Promise.resolve({ text: () => Promise.resolve('') }); } };
+            new Function(...Object.keys(ctx), recibir(js).body)(...Object.values(ctx));
+            await esperar(10);
+            check(js + ': pinta con los datos de la página', T.children.filter((r) => r.tag === 'tr').length === store.contadoresDeTodos()
+                .filter((c) => js === '/contadores.js' || c.existe).length, T.children.length);
+        }
+        check('y no hace ninguna petición más', pedidas === 0, pedidas);
+        const topeV = config.WEB_MAX_BYTES;
+        config.WEB_MAX_BYTES = web.bytesUtf8(pag.body) - 1;   // la página con datos ya no cabe
+        const sinDatos = recibir('/usuarios', 'GET', 's=' + tV).body;
+        config.WEB_MAX_BYTES = topeV;
+        check('si los datos no caben, la página va sin ellos (y el script los pide)', !/data-d=/.test(sinDatos) && /lista\.js/.test(sinDatos));
     }
 
     // El respaldo al PC y la prueba de capacidad se quitaron (22-09-2026): los respaldos
