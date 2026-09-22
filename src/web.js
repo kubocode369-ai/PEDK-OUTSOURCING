@@ -201,6 +201,8 @@ const ESTILO2 = ''
     + '.w{background:#fff6d9;border-color:#e0a800}.ok{color:#1b7a2f}.error{color:#b3261e}'
     + '.g,.r{padding:2px 8px;border-radius:10px;font-size:12px;background:#e9f6ec;color:#1b7a2f}.r{background:#eee;color:#777}'
     + '.v{display:inline-block;margin-bottom:8px;color:var(--r)}.k{color:#666;font-size:13px}'
+    + '.cg{position:fixed;left:50%;top:12px;transform:translateX(-50%);background:#333;color:#fff;'
+    + 'padding:8px 16px;border-radius:14px;font-size:14px;z-index:9}main{transition:opacity .15s}'
     // Móvil: la lista de usuarios (#t) pasa a tarjetas (nombre y estado arriba, botones
     // debajo); las demás tablas se desplazan de lado dentro de su panel (.t).
     + 'main,.c,.t{min-width:0;max-width:100%}.t{overflow-x:auto}'
@@ -225,7 +227,7 @@ let version = null;
 function versionEstaticos() {
     if (!version) {
         version = store.huella('#estaticos', ESTILO + ESTILO2 + LISTA_JS + CONTADORES_JS + CSV_JS + COPIA_BAJAR_JS
-            + COPIA_SUBIR_JS + SUBIR_JS + TABLA_JS + IMPORTAR_JS).slice(0, 8);
+            + COPIA_SUBIR_JS + SUBIR_JS + TABLA_JS + IMPORTAR_JS + PANEL2_JS).slice(0, 8);
     }
     return version;
 }
@@ -256,13 +258,14 @@ const PESTANAS = [['usuarios', 'Usuarios'], ['contadores', 'Contadores'], ['ajus
  */
 function documento(titulo, token, activa, cuerpo, volver) {
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
-        + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/">'
+        + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/"><link rel="icon" href="data:,">'
         + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="' + estatico('estilo.css') + '"></head><body>'
         + '<header><b>Impresión con PIN</b></header>'
         + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
             + (p[0] === activa ? ' class="on"' : '') + '>' + p[1] + '</a>').join('') + '</nav>' : '')
         + '<main>' + (volver ? '<a class="v" href="' + volver[0] + '?s=' + token + '">‹ ' + volver[1] + '</a>' : '')
-        + '<h1>' + escapar(titulo) + '</h1>' + cuerpo + '</main></body></html>';
+        // panel.js en TODAS las páginas: es el que evita recargar al cambiar de sección.
+        + '<h1>' + escapar(titulo) + '</h1>' + cuerpo + '</main><script defer src="' + estatico('panel.js') + '"></script></body></html>';
 }
 
 /** Un panel con cabecera roja. */
@@ -362,7 +365,8 @@ export function parteUsuarios(desde) {
 }
 
 /* Todo con textContent: nada de lo que llega se interpreta como HTML. */
-const LISTA_JS = '(function(){var T=document.getElementById("t"),s=T.getAttribute("data-s"),L=[];'
+const LISTA_JS = 'function pintarUsuarios(){var T=document.getElementById("t");if(!T||T.pintada)return;T.pintada=1;'
+    + 'var s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x)n.textContent=x;if(c)n.className=c;return n}'
     + 'function b(v,x,c){var n=e("button",x,c);n.name="x";n.value=v;return n}'
     + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios."));'
@@ -376,7 +380,7 @@ const LISTA_JS = '(function(){var T=document.getElementById("t"),s=T.getAttribut
     + 'x.slice(m[0].length).split("\\n").forEach(function(l){if(l)L.push(l)});if(+m[1]>=0)p(+m[1]);else pinta()}'
     + 'function p(n){fetch("usuarios.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(q)}'
     // Los datos vienen en la página (data-d) si cabían: una petición menos.
-    + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)})()';
+    + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)}pintarUsuarios()';
 
 /** Cómo se llama en pantalla y en el CSV a quien no se identificó. */
 function persona(quien) {
@@ -402,7 +406,8 @@ function paginaContadores(token, msg) {
  * Columnas del CSV: usuario;nombre;cédula;estado;impr;pág;copias;pág copia;total. Quien
  * no imprimió nada, en gris. Todo con textContent: nada se interpreta como HTML.
  */
-const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAttribute("data-s"),L=[];'
+const CONTADORES_JS = 'function pintarContadores(){var T=document.getElementById("c");if(!T||T.pintada)return;T.pintada=1;'
+    + 'var s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x!=null)n.textContent=x;if(c)n.className=c;return n}'
     + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios ni nada contado."));'
     + 'L.forEach(function(f){var r=e("tr",null,+f[8]?"":"inactivo"),d=e("td"),x=f[3]=="borrado"?"usuario borrado":f[1]+(f[3]=="desactivado"?" (desactivado)":"");'
@@ -412,7 +417,7 @@ const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAtt
     + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>8&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
     + 'if(+m[1]>=0)p(+m[1]);else pinta()}'
     + 'function p(n){fetch("csv?s="+s+"&desde="+n).then(function(r){return r.text()}).then(q)}'
-    + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)})()';
+    + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)}pintarContadores()';
 
 /*
  * CSV por partes: un CSV con mucha gente no cabe en una respuesta. El navegador pide
@@ -491,16 +496,15 @@ function paginaUsuario(token, nombre, msg) {
     if (!u) {
         return paginaUsuarios(token, msg || { ok: false, texto: 'No existe el usuario ' + nombre + '.' });
     }
-    const c = store.contadorDe(u.nombre);
     const inactivo = u.activo === false;
     const campoNombre = '<input type="hidden" name="nombre" value="' + escapar(u.nombre) + '">';
     return documento('Usuario ' + u.nombre, token, 'usuarios', mensajeHtml(msg)
-        + '<p><span class="' + (inactivo ? 'r">desactivado' : 'g">activo') + '</span> ' + c.impresiones + ' impr., '
-        + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág.</p>'
-        // Formularios separados: Enter en un campo pulsa el primer botón de SU formulario.
-        + panel('Datos', formulario(token, 'cambiar', campoNombre + camposDatos(u)
-            + '<p><button class="p" name="a" value="datos">Guardar datos</button></p>'))
-        + panel('PIN y estado', formulario(token, 'cambiar', campoNombre + campo('PIN nuevo', campoPin())
+        // Sin cifras: están en Contadores, y aquí la ficha debe caber con nombres largos.
+        + '<p><span class="' + (inactivo ? 'r">desactivado' : 'g">activo') + '</span></p>'
+        // Dos formularios en un panel: Enter en un campo pulsa el primer botón de SU formulario.
+        + panel('Datos y PIN', formulario(token, 'cambiar', campoNombre + camposDatos(u)
+            + '<p><button class="p" name="a" value="datos">Guardar datos</button></p>')
+        + formulario(token, 'cambiar', campoNombre + campo('PIN nuevo', campoPin())
             + '<p><button class="p" name="a" value="pin">Cambiar PIN</button>'
             + '<button name="a" value="' + (inactivo ? 'activar">Activar' : 'desactivar">Desactivar') + '</button>'
             + '<button class="x" name="a" value="borrar" onclick="return confirm(\'¿Borrar?\')">Borrar</button></p>')),
@@ -634,6 +638,66 @@ function cargador(nombres) {
         + 't+="\\n";if(k+1<N.length)return p(k+1,0);var s=document.createElement("script");s.text=t;document.head.appendChild(s)})}'
         + 'addEventListener("load",function(){p(0,0)})})(' + JSON.stringify(nombres) + ')</script>';
 }
+
+/*
+ * NAVEGACIÓN SIN RECARGAR (panel.js). Cada petición a la app cuesta ~1,15 s fijos
+ * (medido: el firmware tarda eso en pasarla y traer la respuesta; sus propias páginas,
+ * 0,02 s). Como no se puede bajar, se hacen menos: al pulsar una pestaña no se recarga
+ * la página entera, sino que se pide el HTML y se cambia sólo <main>; y las otras
+ * pestañas se traen POR DETRÁS nada más entrar, así que cambiar de pestaña es
+ * instantáneo. Al guardar algo se avisa ("Guardando…") en vez de dejar la pantalla en
+ * blanco, y se olvida lo traído (los datos han cambiado).
+ *
+ * Si algo no encaja (una página sin <main>, un error de red, la sesión caducada), hace
+ * la navegación normal de toda la vida: nunca deja al administrador atascado.
+ */
+/*
+ * Va en DOS ficheros porque juntos no caben en una respuesta (tope ~1,9 KB): el primero
+ * deja las funciones en window.P y pide el segundo, que engancha clics y formularios.
+ * Los dos se guardan en la caché del navegador, así que sólo se piden la primera vez.
+ */
+function panelJs() {
+    return '(function(){if(window.P)return;var C={},Y={},B=document.baseURI;'
+        // Los scripts de cada sección: se sacan de la lista que escribe scripts() y se cargan una vez.
+        + 'function S(h){var m=h.match(/\\[(?:"[^"]+\\.js\\?v=[^"]*",?)+\\]/);return m?JSON.parse(m[0]):[]}'
+        + 'function carga(u,f){var i=0;(function g(){if(i>=u.length)return f();var x=u[i++];if(Y[x])return g();'
+        + 'Y[x]=1;var s=document.createElement("script");s.src=x;s.onload=g;s.onerror=g;document.body.appendChild(s)})()}'
+        // Cada sección pinta lo suyo al llegar (lista de usuarios, contadores).
+        + 'function ini(){if(window.pintarUsuarios)pintarUsuarios();if(window.pintarContadores)pintarContadores()}'
+        + 'function aviso(t){var m=document.querySelector("main");if(m)m.style.opacity=t?".45":"";'
+        + 'var e=document.getElementById("cargando");if(!t){if(e)e.remove();return}'
+        + 'if(!e){e=document.createElement("div");e.id="cargando";e.className="cg";document.body.appendChild(e)}e.textContent=t}'
+        + 'function pinta(h,u){var d=new DOMParser().parseFromString(h,"text/html"),m=d.querySelector("main");'
+        // Sin <main> (o con el cargador de Importar) se navega como siempre.
+        + 'if(!m||/p\\(0,0\\)/.test(h)){location.href=u;return false}'
+        + 'document.querySelector("main").replaceWith(m);var n=d.querySelector("nav");'
+        + 'if(n&&document.querySelector("nav"))document.querySelector("nav").replaceWith(n);'
+        + 'document.title=d.title;scrollTo(0,0);aviso("");carga(S(h),ini);return true}'
+        + 'function ir(u,push){aviso("Cargando…");return fetch(u).then(function(r){return r.text()}).then(function(h){'
+        + 'if(pinta(h,u)&&push!==false)history.pushState({},"",u)}).catch(function(){location.href=u})}'
+        + 'window.P={B:B,C:C,pinta:pinta,ir:ir,aviso:aviso,olvida:function(){for(var k in C)delete C[k]},'
+        + 'ver:function(u){if(C[u]){aviso("");if(pinta(C[u],u))history.pushState({},"",u);return}ir(u,true)}};'
+        + 'var z=document.createElement("script");z.src="' + estatico('panel2.js') + '";document.body.appendChild(z)})()';
+}
+
+const PANEL2_JS = '(function(){var P=window.P;if(!P||window.panelListo)return;window.panelListo=1;'
+    + 'document.addEventListener("click",function(e){var a=e.target.closest?e.target.closest("a"):null;'
+    + 'if(!a||e.defaultPrevented||e.metaKey||e.ctrlKey)return;var h=a.href;if(!h||h.indexOf(P.B)!==0)return;'
+    + 'e.preventDefault();P.ver(h)});'
+    + 'document.addEventListener("submit",function(e){var f=e.target,b=e.submitter,g=(f.method||"get").toLowerCase()=="get";'
+    + 'var p=new URLSearchParams(new FormData(f));if(b&&b.name)p.append(b.name,b.value);'
+    + 'var a=(b&&b.getAttribute("formaction"))||f.getAttribute("action")||location.href;'
+    + 'if(a.indexOf("http")!==0)a=P.B+a;e.preventDefault();P.olvida();'
+    + 'if(g){P.ir(a+"?"+p,true);return}P.aviso("Guardando…");'
+    + 'fetch(a,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:p+""})'
+    + '.then(function(r){return r.text()}).then(function(h){if(P.pinta(h,a))history.pushState({},"",a)})'
+    + '.catch(function(){f.submit()})});'
+    + 'addEventListener("popstate",function(){P.ir(location.href,false)});'
+    // Trae por detrás lo de las otras pestañas, de una en una (la impresora sólo atiende una).
+    + 'setTimeout(function(){var u=[].map.call(document.querySelectorAll("nav a"),function(a){return a.href})'
+    + '.filter(function(x){return x!=location.href&&!/salir/.test(x)});(function g(){if(!u.length)return;'
+    + 'var x=u.shift();fetch(x).then(function(r){return r.text()}).then(function(h){if(/<main/.test(h))P.C[x]=h;g()})'
+    + '.catch(function(){})})()},300)})()';
 
 /*
  * Scripts de una página, pedidos DESPUÉS de que carguen los estilos (evento load). La
@@ -935,6 +999,7 @@ export function atenderRuta(p, ahora) {
         '/subir.js': [js, () => SUBIR_JS], '/copia-bajar.js': [js, () => COPIA_BAJAR_JS],
         '/copia-subir.js': [js, () => COPIA_SUBIR_JS], '/contadores.js': [js, () => CONTADORES_JS],
         '/lista.js': [js, () => LISTA_JS], '/csv.js': [js, () => CSV_JS],
+        '/panel.js': [js, panelJs], '/panel2.js': [js, () => PANEL2_JS],
     }[p.ruta];
     if (estaticos) {
         return { codigo: 200, tipo: estaticos[0], cuerpo: estaticos[1](), cache: true };
