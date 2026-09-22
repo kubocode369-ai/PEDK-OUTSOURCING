@@ -320,7 +320,7 @@ function paginaUsuarios(token, msg) {
         + '<p>' + enlace(token, 'nuevo', '', '+ Nuevo usuario', 'b p') + enlace(token, 'importar', '', 'Importar Excel', 'b') + '</p>'
         + '<div class="c t">' + formulario(token, 'lista', '<table id="t" data-s="' + token + '"' + conDatos(datos)
             + '><tr><th>Usuario</th><th>Estado</th><th></th></tr></table>', BORRAR_CONFIRMA)
-        + '</div><script src="' + estatico('lista.js') + '"></script>');
+        + '</div>' + scripts(['lista.js']));
     return cabeOno(armar, parteUsuarios(0));
 }
 
@@ -394,7 +394,7 @@ function paginaContadores(token, msg) {
             + 'Descargue antes el CSV.\')">Poner a cero</button>', ' style="display:inline"') + '</div>'
         + '<div class="c t"><table id="c" data-s="' + token + '"' + conDatos(datos) + '><tr><th>Persona</th><th>Impr.</th><th>Pág.</th>'
         + '<th>Copias</th><th>Pág. copia</th><th>Total</th></tr></table></div>'
-        + '<script src="' + estatico('csv.js') + '"></script><script src="' + estatico('contadores.js') + '"></script>'), parteCsv(0));
+        + scripts(['csv.js', 'contadores.js'])), parteCsv(0));
 }
 
 /*
@@ -632,7 +632,20 @@ function cargador(nombres) {
     return '<script>(function(N){var t="";function p(k,d){fetch("' + estatico('js') + '&n="+N[k]+"&desde="+d).then(function(r){return r.text()})'
         + '.then(function(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);t+=x.slice(m[0].length);if(+m[1]>=0)return p(k,+m[1]);'
         + 't+="\\n";if(k+1<N.length)return p(k+1,0);var s=document.createElement("script");s.text=t;document.head.appendChild(s)})}'
-        + 'p(0,0)})(' + JSON.stringify(nombres) + ')</script>';
+        + 'addEventListener("load",function(){p(0,0)})})(' + JSON.stringify(nombres) + ')</script>';
+}
+
+/*
+ * Scripts de una página, pedidos DESPUÉS de que carguen los estilos (evento load). La
+ * impresora atiende de una en una (~1,15 s cada petición) y da por perdida la que espera
+ * más de ~5 s ("app response time out"): con la página, las dos hojas de estilo y dos
+ * scripts pedidos a la vez, la última hoja de estilo se perdía y la tabla salía sin
+ * estilo (visto el 22-09-2026). Así no hay más de dos o tres peticiones en cola.
+ * async=false: se ejecutan en orden.
+ */
+function scripts(ficheros) {
+    return '<script>addEventListener("load",function(){' + JSON.stringify(ficheros.map(estatico))
+        + '.forEach(function(u){var s=document.createElement("script");s.src=u;s.async=false;document.body.appendChild(s)})})</script>';
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -774,7 +787,7 @@ function paginaCopia(token, msg) {
             + '<p><input type="file" id="f" accept=".json"></p>'
             + '<button class="p" data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p>')
         + '<p class="k">La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como confidencial.</p>'
-        + ['copia-bajar.js', 'subir.js', 'copia-subir.js'].map((f) => '<script src="' + estatico(f) + '"></script>').join(''),
+        + scripts(['copia-bajar.js', 'subir.js', 'copia-subir.js']),
     ['ajustes', 'Ajustes']);
 }
 

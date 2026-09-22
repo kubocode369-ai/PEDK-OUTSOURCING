@@ -54,6 +54,11 @@ function vacio() {
         registro: [],
         /** Trabajos del historial ya contados (claves). */
         vistos: [],
+        /**
+         * Suelo del historial: todo trabajo con número <= éste ya está contado (o es
+         * anterior a la app). Ver marcarVistos.
+         */
+        pisoVisto: 0,
         /** false hasta la primera lectura del historial: lo anterior no se cuenta. */
         historialIniciado: false,
         ajustes: {
@@ -214,6 +219,7 @@ function normalizar(d) {
     base.contadores = d.contadores && typeof d.contadores === 'object' ? d.contadores : {};
     base.registro = Array.isArray(d.registro) ? d.registro : [];
     base.vistos = Array.isArray(d.vistos) ? d.vistos : [];
+    base.pisoVisto = Number(d.pisoVisto) > 0 ? Number(d.pisoVisto) : 0;
     base.historialIniciado = !!d.historialIniciado;
     if (d.ajustes && typeof d.ajustes === 'object') {
         const a = d.ajustes;
@@ -889,20 +895,45 @@ export function historialIniciado() {
     return cargar().historialIniciado;
 }
 
-export function yaVisto(clave) {
-    return cargar().vistos.indexOf(String(clave)) >= 0;
+/** Número de trabajo de una clave "id|hora", o NaN si no es numérico. */
+function idDe(clave) {
+    return parseInt(String(clave).split('|')[0], 10);
 }
 
-/** Marca claves como contadas; `iniciar` marca además el arranque del historial. */
+export function yaVisto(clave) {
+    const d = cargar();
+    const id = idDe(clave);
+    return (!Number.isNaN(id) && id <= d.pisoVisto) || d.vistos.indexOf(String(clave)) >= 0;
+}
+
+/**
+ * Marca claves como contadas; `iniciar` marca además el arranque del historial.
+ *
+ * FALLO QUE CONTABA LOS TRABAJOS VARIAS VECES (visto en el equipo el 22-09-2026): la
+ * lista tenía un máximo de 200 claves y, al pasarse, olvidaba las más viejas. Pero el
+ * historial del equipo ya traía MÁS de 200 trabajos: los olvidados parecían nuevos en la
+ * siguiente lectura, se volvían a apuntar y echaban a otros, y en ese vaivén acababan
+ * saliendo también trabajos recientes, que se contaban otra vez y se cargaban a quien
+ * tuviera la sesión abierta (una impresión de 2 páginas salió 4 veces, a dos personas).
+ *
+ * Ahora, en vez de olvidar, se sube un SUELO: todo trabajo con número <= pisoVisto se da
+ * por contado. Los trabajos viejos ya no pueden volver a parecer nuevos, tenga el
+ * historial el tamaño que tenga. Los números de trabajo del equipo sólo crecen.
+ */
 export function marcarVistos(claves, iniciar) {
     const d = cargar();
     for (const c of claves) {
-        if (d.vistos.indexOf(String(c)) < 0) {
+        if (!yaVisto(c)) {
             d.vistos.push(String(c));
         }
     }
     if (d.vistos.length > config.VISTOS_MAX) {
-        d.vistos = d.vistos.slice(d.vistos.length - config.VISTOS_MAX);
+        // Se quedan los de número más alto; el más alto de los que salen pasa a ser el suelo.
+        const ordenados = d.vistos.slice().sort((x, y) => (idDe(x) || 0) - (idDe(y) || 0));
+        const fuera = ordenados.slice(0, ordenados.length - config.VISTOS_MAX);
+        const suelo = fuera.reduce((m, c) => Math.max(m, idDe(c) || 0), 0);
+        d.pisoVisto = Math.max(d.pisoVisto, suelo);
+        d.vistos = ordenados.slice(ordenados.length - config.VISTOS_MAX).filter((c) => !(idDe(c) <= d.pisoVisto));
     }
     if (iniciar) {
         d.historialIniciado = true;

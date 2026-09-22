@@ -475,6 +475,35 @@ hablar(); console.log('· Retención'); silenciar();
 }
 
 /* ------------------------------------------------------------------ */
+hablar(); console.log('· Historial de más de 200 trabajos: nada se cuenta dos veces'); silenciar();
+{
+    // Visto en el equipo el 22-09-2026: con más de VISTOS_MAX trabajos en el historial, la
+    // lista de ya contados "olvidaba" los viejos, reaparecían, echaban a los recientes y
+    // éstos se volvían a contar (una impresión de 2 páginas salió 4 veces).
+    const previos = [];
+    for (let i = 0; i < 260; i++) previos.push({ tipo: i % 2 ? 'PRINT' : 'COPY', paginas: 1 });
+    equipo({ historialPrevio: previos });
+    const contados = [];
+    historial.revisar((e) => contados.push(e));
+    hablar();
+    check('la primera lectura no cuenta los 260 trabajos previos', contados.length === 0);
+    mock.imprimir({ tipo: 'PRINT', paginas: 2 });
+    for (let i = 0; i < 30; i++) historial.revisar((e) => contados.push(e));
+    mock.imprimir({ tipo: 'COPY', paginas: 1 });
+    for (let i = 0; i < 30; i++) historial.revisar((e) => contados.push(e));
+    check('en 60 lecturas cada trabajo nuevo se cuenta UNA vez', contados.length === 2
+        && contados[0].paginas === 2 && contados[1].tipo === 'COPY', contados.map((e) => e.id).join(','));
+    for (let i = 0; i < 400; i++) mock.imprimir({ tipo: 'PRINT', paginas: 1 });
+    contados.length = 0;
+    for (let i = 0; i < 5; i++) historial.revisar((e) => contados.push(e));
+    check('con 400 trabajos de golpe, cada uno una vez', contados.length === 400
+        && new Set(contados.map((e) => e.id)).size === 400, contados.length);
+    // El estado que dejó el fallo en el equipo: 200 claves revueltas y sin suelo.
+    const d = mock.getStore();
+    check('la lista de ya contados no crece sin límite', store.estado && JSON.stringify(d).length < 200000);
+    silenciar();
+}
+
 hablar(); console.log('· Vigía de trabajos'); silenciar();
 {
     equipo();
@@ -1419,6 +1448,14 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             && /max-age/.test(recibir('/lista.js').headers.extra['Cache-Control'] || '')
             && /@import "estilo2\.css\?v=[0-9a-f]{8}"/.test(css.body));
         check('las páginas con datos NO se guardan en caché', !pag.headers.extra['Cache-Control']);
+        // Los scripts escritos DENTRO de las páginas (cargador, carga diferida) también tienen
+        // que ser JavaScript válido: no los ejecuta ninguna otra prueba.
+        const enLinea = ['/usuarios', '/contadores', '/copia', '/importar'].flatMap((r) =>
+            (recibir(r, 'GET', 's=' + tV).body.match(/<script>([\s\S]*?)<\/script>/g) || []).map((x) => [r, x.slice(8, -9)]));
+        const malos = enLinea.filter(([, codigo]) => { try { new Function(codigo); return false; } catch (e) { return true; } });
+        check('los scripts dentro de las páginas son válidos', enLinea.length >= 4 && malos.length === 0,
+            enLinea.length + ' scripts; malos: ' + malos.map(([r]) => r).join(','));
+        check('y los de las páginas esperan a que carguen los estilos', enLinea.every(([, c]) => /addEventListener\("load"/.test(c)));
         // Los datos de la lista vienen dentro de la página: el script no pide nada más.
         const dd = (/data-d="([^"]*)"/.exec(pag.body) || [])[1];
         check('la lista de usuarios viene dentro de la página si cabe', !!dd && /SIGUIENTE;-1/.test(dd));
