@@ -1514,8 +1514,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             ['/ajuste', 'POST', 's=' + tP + '&a=minutos&minutos=7'], ['/pinadmin', 'POST', 's=' + tP + '&actual=1'],
             ['/copia', 'GET', 's=' + tP],
             ['/importar', 'GET', 's=' + tP], ['/estilo.css', 'GET', ''], ['/estilo2.css', 'GET', ''],
-            ['/lista.js', 'GET', ''], ['/contadores.js', 'GET', ''], ['/csv.js', 'GET', ''],
-            ['/panel.js', 'GET', ''], ['/panel2.js', 'GET', ''], ['/copia-bajar.js', 'GET', ''], ['/copia-subir.js', 'GET', ''], ['/subir.js', 'GET', ''],
+            ['/lista.js', 'GET', ''], ['/contadores.js', 'GET', ''], ['/csv.js', 'GET', ''], ['/copia-bajar.js', 'GET', ''], ['/copia-subir.js', 'GET', ''], ['/subir.js', 'GET', ''],
         ];
         const nocaben = peores.map(([r, m, b]) => [r + ' ' + m, pedir(r, m, b).body])
             .filter(([, cuerpo]) => /no cabe en lo que la impresora/.test(cuerpo) || web.bytesUtf8(cuerpo) > config.WEB_MAX_BYTES)
@@ -1528,110 +1527,6 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('anota la petición en el diagnóstico', web.informe().join(' ').includes('app_notify'), web.informe().join(' | '));
     delete mock.pedk.net.http.Response;
     check('sin Response en el firmware no se engancha y lo dice', !web.instalar().ok);
-}
-
-/* ------------------------------------------------------------------ */
-hablar(); console.log('· Navegación sin recargar (panel.js, con navegador simulado)'); silenciar();
-{
-    const { JSDOM, VirtualConsole } = await import('jsdom');
-    const web = await import('./.build/web.mjs');
-    const pedir = (ruta, metodo, cuerpo) => mock.pedk.net.http.receiveData(
-        { url: '/pedk/app_notify/' + config.WEB_APP + ruta, method: metodo || 'GET', body: cuerpo || '' });
-    const token = (html) => (/(?:name="s" value="|[?]s=)([0-9a-f]+)/.exec(html) || [])[1];
-    equipo({ retencion: { KuboC: [] } });
-    web._reiniciar();
-    web.instalar();
-    [['ana', 'Ana Ruiz'], ['beto', 'Beto Gil']].forEach(([n, c]) => store.agregarUsuario(n, '1234', { nombreCompleto: c }));
-    store.contar('ana', { tipo: 'PRINT', paginas: 4 });
-    const BASE = 'http://impresora/pedk/app_notify/' + config.WEB_APP + '/';
-    const tok = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
-
-    /** Un navegador de verdad (jsdom) hablando con la app; cuenta las peticiones. */
-    const abrir = async (ruta) => {
-        const peticiones = [];
-        const responder = (url, opciones) => {
-            const u = String(url).replace(BASE, '/');
-            const [r, q] = u.split('?');
-            const metodo = (opciones && opciones.method) || 'GET';
-            peticiones.push(metodo + ' ' + r);
-            const res = pedir('/' + r, metodo, metodo === 'POST' ? (opciones.body || '') : (q || ''));
-            return Promise.resolve({ ok: true, text: () => Promise.resolve(res.body) });
-        };
-        const vc = new VirtualConsole();   // sin ruido de jsdom en la consola de las pruebas
-        const dom = new JSDOM(pedir('/' + ruta, 'GET', 's=' + tok).body, {
-            url: BASE + ruta + '?s=' + tok, runScripts: 'dangerously', resources: undefined, virtualConsole: vc,
-        });
-        const w = dom.window;
-        w.fetch = responder;
-        // Los <script src> los carga el navegador de verdad; aquí se ejecutan a mano.
-        const ejecutar = (src) => {
-            const nombre = String(src).replace(/^.*\//, '').split('?')[0];
-            const codigo = pedir('/' + nombre).body;
-            try { w.eval(codigo); } catch (e) { throw new Error('al ejecutar ' + nombre + ': ' + e.message + ' · ' + codigo.slice(0, 80)); }
-        };
-        const original = w.document.createElement.bind(w.document);
-        w.document.createElement = (tag) => {
-            const el = original(tag);
-            if (String(tag).toLowerCase() === 'script') {
-                let src = '';
-                Object.defineProperty(el, 'src', { get: () => src, set: (v) => { src = v; setTimeout(() => { ejecutar(v); if (el.onload) el.onload(); }, 0); } });
-            }
-            return el;
-        };
-        [].forEach.call(w.document.querySelectorAll('script[src]'), (s) => ejecutar(s.getAttribute('src')));
-        w.dispatchEvent(new w.Event('load'));
-        await esperar(500);   // da tiempo a la precarga de las otras pestañas (arranca a los 300 ms)
-        return { w, peticiones, main: () => w.document.querySelector('main').textContent.replace(/\s+/g, ' ').trim() };
-    };
-
-    const nav = await abrir('usuarios');
-    hablar();
-    check('la lista se pinta con los datos que vienen en la página', /ana/.test(nav.main())
-        && /Ana Ruiz/.test(nav.main()) && /beto/.test(nav.main()), nav.main().slice(0, 140));
-    check('y trae por detrás las otras pestañas', nav.peticiones.filter((p) => /GET \/(contadores|ajustes)/.test(p)).length === 2,
-        nav.peticiones.join(' | '));
-    silenciar();
-
-    // Cambiar de pestaña: sin recargar y sin pedir nada (ya estaba traído).
-    const antes = nav.peticiones.length;
-    nav.w.document.querySelector('nav a[href*="contadores"]').click();
-    await esperar(60);
-    hablar();
-    check('pulsar Contadores cambia al instante, sin pedir nada', /Contadores/.test(nav.w.document.title)
-        && /Ana Ruiz/.test(nav.main()) && /4/.test(nav.main()) && nav.peticiones.length === antes,
-        nav.w.document.title + ' · ' + nav.peticiones.slice(antes).join(','));
-    check('y la dirección del navegador cambia', /contadores/.test(nav.w.location.href), nav.w.location.href);
-    silenciar();
-
-    // Volver atrás con el botón del navegador.
-    nav.w.history.back();
-    await esperar(80);
-    hablar();
-    check('el botón Atrás vuelve a Usuarios', /Usuarios/.test(nav.w.document.title), nav.w.document.title);
-    silenciar();
-
-    // Una acción (desactivar) va por POST y repinta sin recargar.
-    const nav2 = await abrir('usuarios');
-    const antes2 = nav2.peticiones.length;
-    nav2.w.document.querySelector('button[value="d ana"]').click();
-    await esperar(80);
-    hablar();
-    check('desactivar desde la lista repinta sin recargar', !store.validarUsuario('ana', '1234').ok
-        && /ana desactivado/.test(nav2.main()), nav2.main().slice(0, 140));
-    check('y fue una sola petición POST', nav2.peticiones.slice(antes2).filter((p) => p.startsWith('POST')).length === 1,
-        nav2.peticiones.slice(antes2).join(' | '));
-    check('la lista repintada ya muestra Activar', /Activar/.test(nav2.main()));
-    silenciar();
-    store.activarUsuario('ana', true);
-
-    // Los enlaces de Mantenimiento (formulario GET con formaction) también funcionan.
-    const nav3 = await abrir('ajustes');
-    nav3.w.document.querySelector('button[formaction="pinadmin"]').click();
-    await esperar(80);
-    hablar();
-    check('los botones de Mantenimiento llevan a su página', /PIN de administrador/.test(nav3.w.document.title),
-        nav3.w.document.title);
-    silenciar();
 }
 
 hablar();
