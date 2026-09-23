@@ -1446,8 +1446,22 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         const css = recibir('/estilo.css');
         check('y se sirven con caché de larga duración', /max-age=31536000/.test(css.headers.extra['Cache-Control'] || '')
             && /max-age/.test(recibir('/lista.js').headers.extra['Cache-Control'] || '')
-            && /@import "estilo2\.css\?v=[0-9a-f]{8}"/.test(css.body));
+            && /^\*\{box-sizing/.test(css.body) && !/@import/.test(css.body));   // una sola hoja: sin @import
         check('las páginas con datos NO se guardan en caché', !pag.headers.extra['Cache-Control']);
+        // La impresora atiende de una en una y descarta lo que espera más de ~5 s: con más
+        // de dos ficheros por página, la última petición se perdía y la página salía sin
+        // estilo y sin la lista (visto el 23-09-2026).
+        const cuantos = (r) => {
+            const b = recibir(r, 'GET', 's=' + tV).body;
+            const lista = /\[(?:"[^"]+\.js\?v=[^"]*",?)+\]/.exec(b);
+            return (b.match(/<link rel="stylesheet"/g) || []).length     // la hoja de estilos
+                + (lista ? JSON.parse(lista[0]).length : 0)              // scripts del cargador
+                + (/fetch\("js\?v=/.test(b) ? 1 : 0);                    // el cargador por partes (Importar)
+        };
+        const exceso = ['/usuarios', '/contadores', '/ajustes', '/nuevo', '/copia', '/importar']
+            .map((r) => [r, cuantos(r)]).filter(([, n]) => n > 2);
+        check('ninguna página pide más de dos ficheros (estilo y un script)', exceso.length === 0,
+            exceso.map(([r, n]) => r + '=' + n).join(', '));
         // Los scripts escritos DENTRO de las páginas (cargador, carga diferida) también tienen
         // que ser JavaScript válido: no los ejecuta ninguna otra prueba.
         const enLinea = ['/usuarios', '/contadores', '/copia', '/importar'].flatMap((r) =>
@@ -1455,27 +1469,33 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         const malos = enLinea.filter(([, codigo]) => { try { new Function(codigo); return false; } catch (e) { return true; } });
         check('los scripts dentro de las páginas son válidos', enLinea.length >= 4 && malos.length === 0,
             enLinea.length + ' scripts; malos: ' + malos.map(([r]) => r).join(','));
-        check('y los de las páginas esperan a que carguen los estilos', enLinea.every(([, c]) => /addEventListener\("load"/.test(c)));
+        check('y los que cargan ficheros esperan a que carguen los estilos',
+            enLinea.filter(([, c]) => /\.js\?v=|js\?v=/.test(c)).every(([, c]) => /addEventListener\("load"/.test(c)));
         // Los datos de la lista vienen dentro de la página: el script no pide nada más.
         const dd = (/data-d="([^"]*)"/.exec(pag.body) || [])[1];
         check('la lista de usuarios viene dentro de la página si cabe', !!dd && /SIGUIENTE;-1/.test(dd));
         const des = (t) => t.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
         const el = (tag) => ({ tag, children: [], textContent: '', className: '', attrs: {},
             appendChild(c) { this.children.push(c); return c; }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; } });
-        let pedidas = 0;
-        for (const [js, id, re] of [['/lista.js', 't', /data-d="([^"]*)"/], ['/contadores.js', 'c', /data-d="([^"]*)"/]]) {
-            const pagina = js === '/lista.js' ? pag.body : recibir('/contadores', 'GET', 's=' + tV).body;
+        for (const [js, pagina] of [['/lista.js', pag.body], ['/contadores.js', recibir('/contadores', 'GET', 's=' + tV).body]]) {
             const T = el('table');
             T.attrs['data-s'] = tV;
-            T.attrs['data-d'] = des((re.exec(pagina) || [])[1] || '');
+            const dentro = (/data-d="([^"]*)"/.exec(pagina) || [])[1];
+            if (dentro !== undefined) T.attrs['data-d'] = des(dentro);
+            let pedidas = 0;
             const ctx = { document: { getElementById: () => T, createElement: el },
-                fetch: () => { pedidas++; return Promise.resolve({ text: () => Promise.resolve('') }); } };
+                fetch: (url) => {
+                    pedidas++;
+                    const [ruta, q] = url.split('?');
+                    return Promise.resolve({ text: () => Promise.resolve(recibir('/' + ruta, 'GET', q).body) });
+                } };
             new Function(...Object.keys(ctx), recibir(js).body)(...Object.values(ctx));
-            await esperar(10);
-            check(js + ': pinta con los datos de la página', T.children.filter((r) => r.tag === 'tr').length === store.contadoresDeTodos()
-                .filter((c) => js === '/contadores.js' || c.existe).length, T.children.length);
+            await esperar(20);
+            const esperadas = store.contadoresDeTodos().filter((c) => js === '/contadores.js' || c.existe).length;
+            check(js + ': pinta todas las filas', T.children.filter((r) => r.tag === 'tr').length === esperadas,
+                T.children.length + ' de ' + esperadas);
+            check(js + ': con los datos en la página no pide nada', dentro === undefined || pedidas === 0, pedidas);
         }
-        check('y no hace ninguna petición más', pedidas === 0, pedidas);
         const topeV = config.WEB_MAX_BYTES;
         config.WEB_MAX_BYTES = web.bytesUtf8(pag.body) - 1;   // la página con datos ya no cabe
         const sinDatos = recibir('/usuarios', 'GET', 's=' + tV).body;
@@ -1513,7 +1533,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             ['/contadores', 'GET', 's=' + tP], ['/ajustes', 'GET', 's=' + tP], ['/ajuste', 'POST', 's=' + tP + '&a=modo'],
             ['/ajuste', 'POST', 's=' + tP + '&a=minutos&minutos=7'], ['/pinadmin', 'POST', 's=' + tP + '&actual=1'],
             ['/copia', 'GET', 's=' + tP],
-            ['/importar', 'GET', 's=' + tP], ['/estilo.css', 'GET', ''], ['/estilo2.css', 'GET', ''],
+            ['/importar', 'GET', 's=' + tP], ['/estilo.css', 'GET', ''],
             ['/lista.js', 'GET', ''], ['/contadores.js', 'GET', ''], ['/csv.js', 'GET', ''], ['/copia-bajar.js', 'GET', ''], ['/copia-subir.js', 'GET', ''], ['/subir.js', 'GET', ''],
         ];
         const nocaben = peores.map(([r, m, b]) => [r + ' ' + m, pedir(r, m, b).body])

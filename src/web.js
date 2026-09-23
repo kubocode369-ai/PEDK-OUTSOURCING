@@ -175,37 +175,39 @@ function sesionValida(token, ahora) {
  */
 // En dos ficheros (juntos pasan del tope); el primero trae al segundo con @import (ver la
 // ruta /estilo.css, que le añade la versión).
-const ESTILO = ':root{--r:#b03}*{box-sizing:border-box}'
+/*
+ * UNA sola hoja de estilos, y ajustada para caber en una respuesta (~1,9 KB). Estaba en
+ * dos ficheros con @import y eso encadenaba una petición más: en la primera carga, la
+ * segunda hoja esperaba en la cola detrás del script de la lista, pasaba de los ~5 s que
+ * aguanta el firmware y se perdía. El administrador veía la página sin estilo y sin
+ * opciones hasta recargar dos o tres veces (visto el 23-09-2026).
+ */
+const ESTILO = '*{box-sizing:border-box}'
     + 'body{margin:0;font:15px/1.45 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
-    + 'header{background:#fff;padding:12px 16px;border-bottom:4px double var(--r)}'
-    + 'header b{color:var(--r);font-size:19px;letter-spacing:.5px}'
-    + 'nav{display:flex;overflow-x:auto;background:linear-gradient(#fafafa,#dcdcdc);border-bottom:1px solid #bbb}'
+    + 'header{background:#fff;padding:12px 16px;border-bottom:4px double #b03}'
+    + 'header b{color:#b03;font-size:19px}'
+    + 'nav{display:flex;overflow-x:auto;background:#eee;border-bottom:1px solid #bbb}'
     + 'nav a{padding:11px 16px;color:#333;font-weight:600;text-decoration:none;white-space:nowrap}'
-    + 'nav a:hover{background:#ccc}nav a.on{background:var(--r);color:#fff}nav a:last-child{margin-left:auto}'
+    + 'nav a.on{background:#b03;color:#fff}nav a:last-child{margin-left:auto}'
     + 'main{max-width:960px;margin:0 auto;padding:16px}h1{font-size:21px;margin:4px 0 14px}'
+    + '.t{overflow-x:auto;max-width:100%}'
     + '.c{background:#fff;border:3px solid #ccc;margin-bottom:16px;padding:0 16px 14px}'
-    + '.c h2{margin:0 -16px 12px;padding:7px 16px;background:var(--r);color:#fff;font-size:15px}'
-    + 'button,.b{display:inline-block;background:#fff;color:#333;border:1px solid #aaa;border-radius:4px;'
-    + 'padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;margin:3px 4px 3px 0}'
-    + '.p{background:var(--r);color:#fff;border-color:var(--r)}.x{color:var(--r);border-color:var(--r)}'
-    + 'button:disabled{opacity:.5}button:hover,.b:hover{filter:brightness(.92)}'
-    + 'label{display:block;font-weight:600;margin:10px 0 4px}';
-const ESTILO2 = ''
-    + 'input,select{font:inherit;padding:8px 10px;border:1px solid #bbb;border-radius:4px;max-width:100%}'
-    + 'input:focus,select:focus{outline:2px solid var(--r)}'
-    + '.t{overflow-x:auto}table{border-collapse:collapse;width:100%}'
-    + 'th,td{padding:9px 8px;border-bottom:1px solid #e4e4e4;text-align:left;vertical-align:middle}'
-    + 'th{background:#f6f6f6;font-size:13px;color:#555}tr.inactivo td{color:#999}tr.error td{color:#b3261e}'
-    + 'p.ok,p.error,.w{padding:10px 12px;border-radius:4px;border-left:4px solid}'
-    + 'p.ok{background:#e9f6ec;border-color:#1b7a2f}p.error{background:#fdecea;border-color:#b3261e}'
-    + '.w{background:#fff6d9;border-color:#e0a800}.ok{color:#1b7a2f}.error{color:#b3261e}'
-    + '.g,.r{padding:2px 8px;border-radius:10px;font-size:12px;background:#e9f6ec;color:#1b7a2f}.r{background:#eee;color:#777}'
-    + '.v{display:inline-block;margin-bottom:8px;color:var(--r)}.k{color:#666;font-size:13px}'
-    // Móvil: la lista de usuarios (#t) pasa a tarjetas (nombre y estado arriba, botones
-    // debajo); las demás tablas se desplazan de lado dentro de su panel (.t).
-    + 'main,.c,.t{min-width:0;max-width:100%}.t{overflow-x:auto}'
-    + '@media(max-width:600px){body main{padding:10px}.c{padding:0 10px 10px}.c h2{margin:0 -10px 10px}'
-    + 'input,select{width:100%}td select{width:auto}#t tr:first-child{display:none}#t tr{display:block;padding:8px 0;border-bottom:1px solid #e4e4e4}'
+    + '.c h2{margin:0 -16px 12px;padding:7px 16px;background:#b03;color:#fff}'
+    + 'button,.b{display:inline-block;background:#fff;color:#333;border:1px solid #aaa;'
+    + 'padding:8px 14px;font:inherit;font-weight:600;text-decoration:none;margin:3px 4px 3px 0}'
+    + '.p{background:#b03;color:#fff;border-color:#b03}.x{color:#b03;border-color:#b03}'
+    + 'label{display:block;font-weight:600;margin:10px 0 4px}'
+    + 'input,select{font:inherit;padding:8px 10px;border:1px solid #bbb;max-width:100%}'
+    + 'table{border-collapse:collapse;width:100%}'
+    + 'th,td{padding:9px 8px;border-bottom:1px solid #eee;text-align:left}th{background:#f7f7f7}'
+    + '.inactivo{color:#999}p.ok,p.error,.w{padding:10px 12px;border-left:4px solid}'
+    + 'p.ok{background:#efe;border-color:#171}p.error{background:#fee;border-color:#b22}'
+    + '.w{background:#ffe;border-color:#eb0}.ok{color:#171}.error{color:#b22}'
+    + '.g{color:#171}.r{color:#777}.k{color:#666;font-size:13px}'
+    // Móvil: la lista de usuarios (#t) pasa a tarjetas; las demás tablas se deslizan.
+    + '@media(max-width:600px){main{padding:10px}.c{padding:0 10px}.c h2{margin:0 -10px 10px}'
+    + 'input{width:100%}#t tr:first-child{display:none}'
+    + '#t tr{display:block;padding:8px 0;border-bottom:1px solid #eee}'
     + '#t td{display:inline-block;border:0;padding:2px 8px 2px 0}#t td:last-child{display:flex;gap:6px}'
     + '#t td:last-child button{flex:1;margin:4px 0;padding:8px 4px}}';
 
@@ -224,7 +226,7 @@ let version = null;
 /** Huella de todos los ficheros estáticos: cambia cuando cambia cualquiera. */
 function versionEstaticos() {
     if (!version) {
-        version = store.huella('#estaticos', ESTILO + ESTILO2 + LISTA_JS + CONTADORES_JS + CSV_JS + COPIA_BAJAR_JS
+        version = store.huella('#estaticos', ESTILO + LISTA_JS + CONTADORES_JS + CSV_JS + COPIA_BAJAR_JS
             + COPIA_SUBIR_JS + SUBIR_JS + TABLA_JS + IMPORTAR_JS).slice(0, 8);
     }
     return version;
@@ -389,12 +391,12 @@ function paginaContadores(token, msg) {
     // en una página, como en Usuarios. En la impresora sólo cabían unas pocas filas.
     return cabeOno((datos) => documento('Contadores', token, 'contadores', mensajeHtml(msg)
         + '<p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> páginas (' + t.paginas + ' impresas, '
-        + t.paginasCopia + ' copiadas)</p><div style="margin-bottom:10px"><button class="p" data-s="' + token + '" onclick="bajarCsv(this)">Descargar CSV (Excel)</button>'
+        + t.paginasCopia + ' copiadas)</p><div style="margin-bottom:10px">' + botonJs(token, 'csv.js', 'bajarCsv', 'p', 'Descargar CSV (Excel)')
         + formulario(token, 'cero', '<button class="x" onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
             + 'Descargue antes el CSV.\')">Poner a cero</button>', ' style="display:inline"') + '</div>'
         + '<div class="c t"><table id="c" data-s="' + token + '"' + conDatos(datos) + '><tr><th>Persona</th><th>Impr.</th><th>Pág.</th>'
         + '<th>Copias</th><th>Pág. copia</th><th>Total</th></tr></table></div>'
-        + scripts(['csv.js', 'contadores.js'])), parteCsv(0));
+        + CARGA_JS + scripts(['contadores.js'])), parteCsv(0));
 }
 
 /*
@@ -643,6 +645,21 @@ function cargador(nombres) {
  * estilo (visto el 22-09-2026). Así no hay más de dos o tres peticiones en cola.
  * async=false: se ejecutan en orden.
  */
+/*
+ * Botón que carga su script al pulsarlo, no al abrir la página: así ninguna página pide
+ * más de dos ficheros (la impresora atiende de una en una y descarta lo que espera más
+ * de ~5 s: con más ficheros se perdía uno y la página salía sin estilo o sin la lista).
+ * La primera pulsación tarda algo más; las siguientes, nada.
+ */
+function botonJs(token, fichero, funcion, clase, texto) {
+    return '<button class="' + clase + '" data-s="' + token + '" onclick="J(this,\'' + estatico(fichero)
+        + '\',\'' + funcion + '\')">' + texto + '</button>';
+}
+
+const CARGA_JS = '<script>function J(b,u,f){if(window[f])return window[f](b);b.disabled=true;'
+    + 'var s=document.createElement("script");s.src=u;s.onload=function(){b.disabled=false;window[f](b)};'
+    + 's.onerror=function(){b.disabled=false;alert("No se pudo cargar: reinténtelo")};document.body.appendChild(s)}</script>';
+
 function scripts(ficheros) {
     return '<script>addEventListener("load",function(){' + JSON.stringify(ficheros.map(estatico))
         + '.forEach(function(u){var s=document.createElement("script");s.src=u;s.async=false;document.body.appendChild(s)})})</script>';
@@ -782,12 +799,12 @@ export function trozoSubida(token, d) {
 function paginaCopia(token, msg) {
     return documento('Copia de seguridad', token, 'ajustes', mensajeHtml(msg)
         + panel('Descargar', '<p>Guarda en este PC una copia con usuarios, PIN, nombre, cédula, contadores y ajustes.</p>'
-            + '<button class="p" data-s="' + token + '" onclick="bajarCopia(this)">Descargar copia</button>')
+            + botonJs(token, 'copia-bajar.js', 'bajarCopia', 'p', 'Descargar copia'))
         + panel('Subir', '<p>Deja la impresora como estaba en esa copia (p. ej. tras reinstalar). No borra a nadie.</p>'
             + '<p><input type="file" id="f" accept=".json"></p>'
-            + '<button class="p" data-s="' + token + '" onclick="subirCopia(this)">Subir copia</button><p id="e"></p>')
+            + botonJs(token, 'copia-subir.js', 'subirCopia', 'p', 'Subir copia') + '<p id="e"></p>')
         + '<p class="k">La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como confidencial.</p>'
-        + scripts(['copia-bajar.js', 'subir.js', 'copia-subir.js']),
+        + CARGA_JS,
     ['ajustes', 'Ajustes']);
 }
 
@@ -930,10 +947,9 @@ export function atenderRuta(p, ahora) {
     // Estáticos: iguales para todos y versionados, así que el navegador los guarda (r.cache).
     const js = 'text/javascript; charset=utf-8';
     const estaticos = {
-        '/estilo.css': ['text/css; charset=utf-8', () => '@import "' + estatico('estilo2.css') + '";' + ESTILO],
-        '/estilo2.css': ['text/css; charset=utf-8', () => ESTILO2],
+        '/estilo.css': ['text/css; charset=utf-8', () => ESTILO],
         '/subir.js': [js, () => SUBIR_JS], '/copia-bajar.js': [js, () => COPIA_BAJAR_JS],
-        '/copia-subir.js': [js, () => COPIA_SUBIR_JS], '/contadores.js': [js, () => CONTADORES_JS],
+        '/copia-subir.js': [js, () => SUBIR_JS + ';' + COPIA_SUBIR_JS], '/contadores.js': [js, () => CONTADORES_JS],
         '/lista.js': [js, () => LISTA_JS], '/csv.js': [js, () => CSV_JS],
     }[p.ruta];
     if (estaticos) {
