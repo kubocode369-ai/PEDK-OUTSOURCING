@@ -7,7 +7,7 @@ y la incrusta en la app (src/plantilla.js), para que la web la pueda descargar.
 Por qué a mano y no con una librería: no hace falta instalar nada, y el fichero queda
 mínimo (la impresora sólo manda ~1,8 KB por respuesta, así que se sirve por partes).
 
-Las cuatro columnas van en FORMATO TEXTO: si no, Excel convierte "0912345678" o el PIN
+Las tres columnas van en FORMATO TEXTO: si no, Excel convierte "0912345678" o el PIN
 "0123" en números y se come el cero inicial. La plantilla NO trae filas de ejemplo: una
 plantilla con ejemplos acabó una vez dada de alta como si fueran personas de verdad.
 """
@@ -43,15 +43,15 @@ def celda(ref, texto, estilo):
 HOJA_USUARIOS = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
     '<cols><col min="1" max="1" width="18" style="1" customWidth="1"/><col min="2" max="2" width="10" style="1" customWidth="1"/>'
-    '<col min="3" max="3" width="36" style="1" customWidth="1"/><col min="4" max="4" width="16" style="1" customWidth="1"/></cols>'
+    '<col min="3" max="3" width="36" style="1" customWidth="1"/></cols>'
     '<sheetData><row r="1">' + celda('A1', 'Usuario', 2) + celda('B1', 'PIN', 2) + celda('C1', 'Nombre completo', 2)
-    + celda('D1', 'Cédula', 2) + '</row></sheetData></worksheet>')
+    + '</row></sheetData></worksheet>')
 
 INSTRUCCIONES = [
     'Escriba una persona por fila en la hoja "Usuarios", desde la fila 2. No cambie los títulos.',
     'Usuario: minúsculas, números y . _ - (sin espacios ni tildes). Es el Nombre que se pone en el driver de su PC.',
     'PIN: de 4 a 8 números. Es la Contraseña del driver. Las columnas están en formato texto para que no se pierdan los ceros.',
-    'Nombre completo y Cédula: opcionales, para saber quién es cada usuario. La cédula no puede repetirse.',
+    'Nombre completo: opcional, para saber quién es cada usuario.',
     'Los usuarios que ya existan en la impresora se saltan: no se cambian. Para cambiar a alguien use su ficha en la web.',
     'Este fichero lleva los PIN en claro: bórrelo o guárdelo como un documento confidencial después de importar.',
 ]

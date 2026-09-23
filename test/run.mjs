@@ -866,7 +866,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         };
         new Function(...Object.keys(ctx), pedir('/contadores.js').body)(...Object.values(ctx));
         await esperar(30);
-        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 6).map((r) => ({
+        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 6 && r.children[0].tag === 'td').map((r) => ({
             nombre: r.children[0].children[0].textContent,
             detalle: (r.children[0].children[2] || {}).textContent || '',
             celdas: r.children.slice(1).map((c) => (c.children[0] || c).textContent),
@@ -874,14 +874,14 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         }));
         return { filas, mayor, texto: T.textContent };
     };
-    /** Una copia con `n` personas del tamaño de las reales (nombre, cédula, contadores). */
+    /** Una copia con `n` personas del tamaño de las reales (nombre, contadores). */
     const copiaDe = (n) => {
         const usuarios = [];
         const contadores = {};
         for (let i = 0; i < n; i++) {
             const nombre = 'usuario.' + String(i).padStart(5, '0');
             usuarios.push({ nombre, huella: (0x10000000 + i * 7919).toString(16) + (0x20000000 + i * 104729).toString(16),
-                activo: true, creado: '2026-09-21T12:00:00.000Z', cedula: String(1700000000 + i),
+                activo: true, creado: '2026-09-21T12:00:00.000Z',
                 nombreCompleto: 'Nombre Segundo Apellido Apellido ' + i });
             contadores[nombre] = { impresiones: 120 + i, paginas: 1500 + i, copias: 30, paginasCopia: 400 };
         }
@@ -909,7 +909,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         listaJs = listaJs || pedir('/lista.js').body;
         new Function(...Object.keys(ctx), listaJs)(...Object.values(ctx));
         await esperar(30);
-        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 3).map((r) => ({
+        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 3 && r.children[0].tag === 'td').map((r) => ({
             nombre: r.children[0].children[0].textContent,
             completo: (r.children[0].children[2] || {}).textContent || '',
             estado: (r.children[1].children[0] || r.children[1]).textContent,
@@ -1069,11 +1069,11 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     const lineas = csv ? csv.split('\n').filter(Boolean) : [];
     check('el CSV se descarga en varias partes y cada una cabe', partes > 1 && mayorP <= config.WEB_MAX_BYTES, partes + ' partes, ' + mayorP + ' bytes');
     check('el CSV lleva BOM, cabecera, a todos y el TOTAL',
-        !!csv && csv.charCodeAt(0) === 0xfeff && lineas.some((l) => /^Usuario;Nombre completo;Cedula;Estado;Impresiones/.test(l))
+        !!csv && csv.charCodeAt(0) === 0xfeff && lineas.some((l) => /^Usuario;Nombre completo;Estado;Impresiones/.test(l))
         && lineas.length - lineas.findIndex((l) => /^Usuario;/.test(l)) - 2 === store.contadoresDeTodos().length
         && /^TOTAL;/.test(lineas[lineas.length - 1]), bajado && (bajado.error || lineas.length));
     const tot = store.totales();
-    check('el TOTAL del CSV cuadra', lineas.length && lineas[lineas.length - 1] === 'TOTAL;;;;' + tot.impresiones + ';'
+    check('el TOTAL del CSV cuadra', lineas.length && lineas[lineas.length - 1] === 'TOTAL;;;' + tot.impresiones + ';'
         + tot.paginas + ';' + tot.copias + ';' + tot.paginasCopia + ';' + (tot.paginas + tot.paginasCopia), lineas[lineas.length - 1]);
     check('el CSV pide sesión', !/^SIGUIENTE/.test(pedir('/csv', 'GET', 'desde=0').body));
 
@@ -1082,37 +1082,32 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     resp = pedir('/cero', 'POST', 's=' + s3);
     check('poner a cero por POST', /Contadores a cero/.test(resp.body) && store.contadores().length === 0);
 
-    // Nombre completo y cédula.
+    // Nombre completo (la cédula se quitó el 23-09-2026: el cliente no la necesita).
     store.usuarios().forEach((u) => store.quitarUsuario(u.nombre));
     store.reiniciarContadores();
     const enc = encodeURIComponent;
-    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=jperez&pin=1234&nombreCompleto=' + enc('  José   Pérez Núñez ')
-        + '&cedula=' + enc('1712-345.678'));
+    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=jperez&pin=1234&nombreCompleto=' + enc('  José   Pérez Núñez '));
     const jp = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
-    check('alta con nombre completo y cédula (acentos y espacios de más)',
-        jp && jp.nombreCompleto === 'José Pérez Núñez' && jp.cedula === '1712345678', JSON.stringify(jp));
+    check('alta con nombre completo (acentos y espacios de más)',
+        jp && jp.nombreCompleto === 'José Pérez Núñez' && jp.cedula === undefined, JSON.stringify(jp));
     check('la lista enseña el nombre completo', (await verLista(s3)).filas.some((f) => f.nombre === 'jperez' && f.completo === 'José Pérez Núñez'));
-    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=otro&pin=1234&nombreCompleto=Otra+Persona&cedula=1712345678');
-    check('no deja repetir una cédula', /ya la tiene el usuario jperez/.test(resp.body) && !store.usuarios().some((u) => u.nombre === 'otro'));
-    check('y no hace volver a escribirlo todo', /value="Otra Persona"/.test(resp.body) && /value="otro"/.test(resp.body));
-    resp = pedir('/alta', 'POST', 's=' + s3 + '&nombre=otro&pin=1234&cedula=12');
-    check('rechaza una cédula demasiado corta', /Cédula no válida/.test(resp.body));
-    check('nombre y cédula son opcionales', pedir('/alta', 'POST', 's=' + s3 + '&nombre=anon&pin=1234') && store.usuarios().some((u) => u.nombre === 'anon'));
+    pedir('/alta', 'POST', 's=' + s3 + '&nombre=otro&pin=1234&nombreCompleto=Otra+Persona&cedula=1712345678');
+    check('un campo cédula que llegue se ignora', store.usuarios().some((u) => u.nombre === 'otro')
+        && store.usuarios().filter((u) => u.nombre === 'otro')[0].cedula === undefined);
+    store.quitarUsuario('otro');
+    check('el nombre completo es opcional', pedir('/alta', 'POST', 's=' + s3 + '&nombre=anon&pin=1234') && store.usuarios().some((u) => u.nombre === 'anon'));
     check('el nombre no puede meter HTML', !/<x>/.test(pedir('/usuario', 'GET', 's=' + s3 + '&n=anon').body)
         && store.cambiarDatosUsuario('anon', { nombreCompleto: 'a<x>b' }).ok && !/<x>/.test(pedir('/usuario', 'GET', 's=' + s3 + '&n=anon').body));
 
-    resp = pedir('/cambiar', 'POST', 's=' + s3 + '&nombre=jperez&a=datos&nombreCompleto=' + enc('José Pérez') + '&cedula=');
+    resp = pedir('/cambiar', 'POST', 's=' + s3 + '&nombre=jperez&a=datos&nombreCompleto=' + enc('José Pérez'));
     const jp2 = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
-    check('la ficha guarda los datos (y vaciar la cédula la quita)', /Datos guardados/.test(resp.body)
-        && jp2.nombreCompleto === 'José Pérez' && jp2.cedula === '', JSON.stringify(jp2));
-    check('su propia cédula no cuenta como repetida', store.cambiarDatosUsuario('jperez', { cedula: '99999', nombreCompleto: 'José Pérez' }).ok
-        && store.cambiarDatosUsuario('jperez', { cedula: '99999', nombreCompleto: 'J P' }).ok);
+    check('la ficha guarda el nombre', /Datos guardados/.test(resp.body) && jp2.nombreCompleto === 'José Pérez', JSON.stringify(jp2));
     check('la ficha cabe con un nombre largo con acentos', (() => {
         store.cambiarDatosUsuario('jperez', { nombreCompleto: 'Ñ'.repeat(config.NOMBRE_COMPLETO_MAX) });
         return web.bytesUtf8(pedir('/usuario', 'GET', 's=' + s3 + '&n=jperez').body) <= config.WEB_MAX_BYTES;
     })());
     check('más largo que el máximo no se guarda', !store.cambiarDatosUsuario('jperez', { nombreCompleto: 'a'.repeat(config.NOMBRE_COMPLETO_MAX + 1) }).ok);
-    store.cambiarDatosUsuario('jperez', { nombreCompleto: 'José Pérez', cedula: '99999' });
+    store.cambiarDatosUsuario('jperez', { nombreCompleto: 'José Pérez' });
 
     // Los contadores enseñan a todos, también a quien no imprimió.
     store.contar('jperez', { tipo: 'PRINT', paginas: 3 });
@@ -1125,17 +1120,17 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('la página de contadores enseña al que tiene cero, en gris', vc2.filas.some((f) => f.nombre === 'anon' && f.clase === 'inactivo')
         && vc2.filas.some((f) => f.nombre === 'fantasma' && f.detalle === 'usuario borrado'), JSON.stringify(vc2.filas.slice(0, 4)));
     const p0 = pedir('/csv', 'GET', 's=' + s3 + '&desde=0').body;
-    check('el CSV lleva nombre completo, cédula y estado', /\njperez;José Pérez;99999;activo;1;3;0;0;3\n/.test(p0)
-        && /\nanon;a x b;;activo;0;0;0;0;0\n/.test(p0) && /\nfantasma;;;borrado;1;2/.test(p0), p0);
+    check('el CSV lleva nombre completo y estado', /\njperez;José Pérez;activo;1;3;0;0;3\n/.test(p0)
+        && /\nanon;a x b;activo;0;0;0;0;0\n/.test(p0) && /\nfantasma;;borrado;1;2/.test(p0), p0);
 
     // Viajan en la copia de seguridad y vuelven al restaurar.
     const copia = JSON.parse(JSON.stringify(store.respaldo()));
     store.quitarUsuario('jperez');
     store.restaurarUsuarios(copia);
     const vuelto = store.usuarios().filter((u) => u.nombre === 'jperez')[0];
-    check('nombre y cédula sobreviven a respaldar y restaurar', vuelto && vuelto.nombreCompleto === 'José Pérez' && vuelto.cedula === '99999');
+    check('el nombre completo sobrevive a respaldar y restaurar', vuelto && vuelto.nombreCompleto === 'José Pérez');
     store.restaurarUsuarios([{ nombre: 'jperez', pin: '1234' }]);
-    check('un fichero sin esos datos no los borra', store.usuarios().filter((u) => u.nombre === 'jperez')[0].cedula === '99999');
+    check('un fichero sin ese dato no lo borra', store.usuarios().filter((u) => u.nombre === 'jperez')[0].nombreCompleto === 'José Pérez');
 
     // Ajustes desde la web: la MISMA lógica que el panel (acciones.js).
     const acciones = await import('./.build/acciones.mjs');
@@ -1378,8 +1373,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         check(tipo + ': importa los válidos con su PIN (con cero inicial)', /3 usuario\(s\) creados/.test(nav.els.e.textContent)
             && store.validarUsuario('lperez', '0123').ok && store.validarUsuario('mgomez', '4567').ok && store.validarUsuario('sincedula', '24680').ok,
             nav.els.e.textContent);
-        check(tipo + ': conserva acentos y el cero inicial de la cédula', lp && lp.nombreCompleto === 'Lucía Pérez Núñez' && lp.cedula === '0912345678',
-            JSON.stringify(lp));
+        check(tipo + ': conserva los acentos del nombre', lp && lp.nombreCompleto === 'Lucía Pérez Núñez', JSON.stringify(lp));
         check(tipo + ': a quien ya existía no lo toca', store.validarUsuario('ana', '4321').ok
             && store.usuarios().filter((u) => u.nombre === 'ana')[0].nombreCompleto === 'Ana Original');
         check(tipo + ': los inválidos no entran', !store.usuarios().some((u) => /corto|mala/.test(u.nombre)) && store.usuarios().length === 4);
@@ -1396,9 +1390,9 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     const directo = (tok, obj) => pedir('/subir', 'POST', 's=' + tok + '&k=importar&z=0&u=x&i=0&t=1&d='
         + Buffer.from(JSON.stringify(obj)).toString('base64url')).body;
     const tD = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
-    resp = directo(tD, { filas: [[2, 'x y', '1'], [3, 'valido', '5555', '<b>', '12']] });
+    resp = directo(tD, { filas: [[2, 'x y', '1'], [3, 'valido2', '1']] });
     check('la impresora revalida cada fila importada', /^ERROR;0 usuario\(s\) creados; 2 con errores: fila 2 \(x y: Usuario no válido/.test(resp)
-        && !store.usuarios().some((u) => u.nombre === 'valido'), resp);
+        && !store.usuarios().some((u) => u.nombre === 'valido2'), resp);
     const maxReal = config.USUARIOS_MAX;
     config.USUARIOS_MAX = store.usuarios().length + 1;
     resp = directo(tD, { filas: [[2, 'uno', '1111'], [3, 'dos', '2222']] });
@@ -1492,7 +1486,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             new Function(...Object.keys(ctx), recibir(js).body)(...Object.values(ctx));
             await esperar(20);
             const esperadas = store.contadoresDeTodos().filter((c) => js === '/contadores.js' || c.existe).length;
-            check(js + ': pinta todas las filas', T.children.filter((r) => r.tag === 'tr').length === esperadas,
+            check(js + ': pinta todas las filas', T.children.filter((r) => r.tag === 'tr' && r.children[0] && r.children[0].tag === 'td').length === esperadas,
                 T.children.length + ' de ' + esperadas);
             check(js + ': con los datos en la página no pide nada', dentro === undefined || pedidas === 0, pedidas);
         }

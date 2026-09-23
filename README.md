@@ -63,9 +63,9 @@ fallos se frena 5 minutos; la sesión caduca a los 15 minutos sin uso.
 
 | Sección | Qué hace |
 |---|---|
-| **Usuarios** | Todos en una página con **Editar · Desactivar · Borrar**. Cada usuario puede llevar **nombre completo y cédula** (la cédula no se repite). La ficha cambia PIN y datos |
+| **Usuarios** | Todos en una página con **Editar · Desactivar · Borrar**. Cada usuario puede llevar **nombre completo** (opcional). La ficha cambia PIN y nombre |
 | **Importar Excel** | Plantilla `.xlsx`, vista previa fila a fila y alta de los válidos (ver abajo) |
-| **Contadores** | Todos los usuarios (también los que no imprimieron), "Sin identificar" y usuarios borrados. **CSV para Excel** y puesta a cero |
+| **Contadores** | Todos los usuarios (también los que no imprimieron), "Sin identificar" y usuarios borrados. Filas alternas y cifras alineadas. **CSV para Excel** y puesta a cero |
 | **Ajustes** | Modo, bloqueo, copia con PIN, duración de la sesión, desbloquear equipo, **PIN de administrador**. Misma lógica que el panel (`acciones.js`); no cambia el modo ni enciende el bloqueo con alguien dentro |
 | **Copia de seguridad** | **Descargar** y **Subir** desde el navegador. Los respaldos los hace el propio administrador |
 
@@ -93,7 +93,7 @@ impresora: `npm test` y luego `node test/vista.mjs` → `http://localhost:8123/p
 
 Medido en el equipo el 21-09-2026 (con una prueba de capacidad que se quitó después; dos
 veces, con el mismo resultado): cada usuario
-ocupa ~270 bytes con nombre, cédula y contadores, y **cada trabajo contado reescribe todos
+ocupa ~270 bytes con nombre y contadores, y **cada trabajo contado reescribe todos
 los datos**, ~0,85 s por cada 1000 usuarios (500 → 0,44 s; 1000 → 0,85 s; 3000 → 2,4 s).
 Mientras dura, el panel y el guardián esperan.
 
@@ -148,7 +148,7 @@ mano), **Explorar SDK** y el estado de la web.
 1. Web → Ajustes → Copia de seguridad → **Descargar copia**.
 2. Instalar el `.tar` nuevo.
 3. Web (PIN `2580`, el de fábrica, porque se borró) → Copia de seguridad → **Subir copia**.
-   Vuelven usuarios con su PIN, nombre y cédula, contadores, ajustes, PIN de
+   Vuelven usuarios con su PIN y su nombre, contadores, ajustes, PIN de
    administrador, modo y bloqueo.
 
 Subir una copia **no borra a nadie**, y si la impresora ya tiene contadores en marcha no
@@ -161,9 +161,9 @@ las trataría como dos apps y correrían dos guardianes.
 
 Usuarios → **Importar Excel**:
 
-1. **Descargar plantilla**: `.xlsx` con Usuario, PIN, Nombre completo y Cédula, en
-   **formato texto** (si no, Excel se come el cero inicial de PIN y cédulas) y una hoja de
-   instrucciones. Sin filas de ejemplo, a propósito.
+1. **Descargar plantilla**: `.xlsx` con Usuario, PIN y Nombre completo, en **formato
+   texto** (si no, Excel se come el cero inicial de los PIN) y una hoja de instrucciones.
+   Sin filas de ejemplo, a propósito.
 2. Elegir el `.xlsx` (o un `.csv`) → **Revisar**: vista previa fila a fila (nuevo / ya
    existe: se salta / el error). Los PIN no se muestran.
 3. **Importar**: se dan de alta sólo los válidos. La impresora vuelve a validar cada fila

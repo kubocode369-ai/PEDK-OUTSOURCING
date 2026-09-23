@@ -46,7 +46,7 @@ function ns() {
 function vacio() {
     return {
         version: 1,
-        /** [{nombre, huella, activo, creado, cedula?, nombreCompleto?}] */
+        /** [{nombre, huella, activo, creado, nombreCompleto?}] */
         usuarios: [],
         /** {nombre: {impresiones, paginas, copias, paginasCopia}} */
         contadores: {},
@@ -423,10 +423,9 @@ export function restaurarUsuarios(entrada) {
             malos++;
             continue;
         }
-        // Cédula y nombre completo viajan con el usuario; si el fichero no los trae, se
-        // conservan los que ya hubiera (un respaldo viejo no borra lo que se escribió después).
+        // El nombre completo viaja con el usuario; si el fichero no lo trae, se conserva el
+        // que ya hubiera (una copia vieja no borra lo que se escribió después).
         const extra = {};
-        if (u.cedula) extra.cedula = normalizarCedula(u.cedula);
         if (u.nombreCompleto) extra.nombreCompleto = normalizarNombreCompleto(u.nombreCompleto).slice(0, config.NOMBRE_COMPLETO_MAX);
         const ya = d.usuarios.filter((x) => x.nombre === n)[0];
         if (ya) {
@@ -608,30 +607,16 @@ export function normalizarNombreCompleto(texto) {
     return String(texto || '').replace(/[<>;"\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-/** Sin espacios ni guiones sobrantes: "1712-345678" y "1712345678" son la misma cédula. */
-export function normalizarCedula(texto) {
-    return String(texto || '').replace(/[\s.-]/g, '').toUpperCase();
-}
-
 /**
- * Valida y normaliza {cedula, nombreCompleto}. `yo` es el usuario que se está
- * editando: su propia cédula no cuenta como repetida.
- * @returns {{ok: boolean, error?: string, datos?: {cedula: string, nombreCompleto: string}}}
+ * Valida y normaliza {nombreCompleto}.
+ * @returns {{ok: boolean, error?: string, datos?: {nombreCompleto: string}}}
  */
-function validarDatos(datos, yo) {
+function validarDatos(datos) {
     const nombreCompleto = normalizarNombreCompleto(datos && datos.nombreCompleto);
-    const cedula = normalizarCedula(datos && datos.cedula);
     if (nombreCompleto.length > config.NOMBRE_COMPLETO_MAX) {
         return { ok: false, error: 'Nombre completo de hasta ' + config.NOMBRE_COMPLETO_MAX + ' letras' };
     }
-    if (cedula && !/^[0-9A-Z]{5,15}$/.test(cedula)) {
-        return { ok: false, error: 'Cédula no válida (5 a 15 números o letras)' };
-    }
-    const otro = cedula && cargar().usuarios.filter((u) => u.cedula === cedula && u.nombre !== yo)[0];
-    if (otro) {
-        return { ok: false, error: 'Esa cédula ya la tiene el usuario ' + otro.nombre };
-    }
-    return { ok: true, datos: { cedula, nombreCompleto } };
+    return { ok: true, datos: { nombreCompleto } };
 }
 
 /** Valida y crea SIN guardar: agregarUsuario guarda una vez; importarUsuarios, al final. */
@@ -652,7 +637,7 @@ function crearUsuario(nombre, pin, datos) {
     if (!pinValido(pin)) {
         return { ok: false, error: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos' };
     }
-    const v = validarDatos(datos, n);
+    const v = validarDatos(datos);
     if (!v.ok) {
         return v;
     }
@@ -661,7 +646,7 @@ function crearUsuario(nombre, pin, datos) {
     return { ok: true };
 }
 
-/** `datos` = {cedula, nombreCompleto}, opcionales. */
+/** `datos` = {nombreCompleto}, opcional. */
 export function agregarUsuario(nombre, pin, datos) {
     const r = crearUsuario(nombre, pin, datos);
     if (r.ok) {
@@ -676,13 +661,13 @@ export function agregarUsuario(nombre, pin, datos) {
  * por cada 1000 usuarios, por persona (medido): minutos con la impresora parada.
  * Quien ya existe se SALTA sin tocarlo: para cambiar a alguien está su ficha.
  *
- * @param {Array<{fila: number, usuario: string, pin: string, nombreCompleto?: string, cedula?: string}>} filas
+ * @param {Array<{fila: number, usuario: string, pin: string, nombreCompleto?: string}>} filas
  * @returns {{creados: number, existentes: string[], errores: Array<{fila: number, usuario: string, error: string}>}}
  */
 export function importarUsuarios(filas) {
     const out = { creados: 0, existentes: [], errores: [] };
     for (const f of filas || []) {
-        const r = crearUsuario(f && f.usuario, f && f.pin, { nombreCompleto: f && f.nombreCompleto, cedula: f && f.cedula });
+        const r = crearUsuario(f && f.usuario, f && f.pin, { nombreCompleto: f && f.nombreCompleto });
         if (r.ok) {
             out.creados++;
         } else if (r.existe) {
@@ -703,7 +688,7 @@ export function cambiarDatosUsuario(nombre, datos) {
     if (!u) {
         return { ok: false, error: 'No existe el usuario ' + normalizarUsuario(nombre) };
     }
-    const v = validarDatos(datos, u.nombre);
+    const v = validarDatos(datos);
     if (!v.ok) {
         return v;
     }
@@ -845,16 +830,16 @@ export function contadores() {
  * Contadores de TODOS: cada usuario aunque no haya impreso nada (para ver quién no
  * imprime), más quien ya no existe pero tiene páginas contadas y lo impreso sin
  * identificarse. Ordenado por páginas y, a igualdad, por usuario.
- * [{quien, nombreCompleto, cedula, existe, activo, impresiones, paginas, copias, paginasCopia}]
+ * [{quien, nombreCompleto, existe, activo, impresiones, paginas, copias, paginasCopia}]
  */
 export function contadoresDeTodos() {
     const d = cargar();
     const cero = { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
     const filas = d.usuarios.map((u) => Object.assign({ quien: u.nombre, nombreCompleto: u.nombreCompleto || '',
-        cedula: u.cedula || '', existe: true, activo: u.activo !== false }, cero, d.contadores[u.nombre]));
+        existe: true, activo: u.activo !== false }, cero, d.contadores[u.nombre]));
     Object.keys(d.contadores).forEach((quien) => {
         if (!d.usuarios.some((u) => u.nombre === quien)) {
-            filas.push(Object.assign({ quien, nombreCompleto: '', cedula: '', existe: false, activo: false },
+            filas.push(Object.assign({ quien, nombreCompleto: '', existe: false, activo: false },
                 cero, d.contadores[quien]));
         }
     });

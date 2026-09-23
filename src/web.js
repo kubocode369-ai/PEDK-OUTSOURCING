@@ -183,13 +183,13 @@ function sesionValida(token, ahora) {
  * opciones hasta recargar dos o tres veces (visto el 23-09-2026).
  */
 const ESTILO = '*{box-sizing:border-box}'
-    + 'body{margin:0;font:15px/1.45 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
+    + 'body{margin:0;font:15px/1.4 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
     + 'header{background:#fff;padding:12px 16px;border-bottom:4px double #b03}'
     + 'header b{color:#b03;font-size:19px}'
     + 'nav{display:flex;overflow-x:auto;background:#eee;border-bottom:1px solid #bbb}'
     + 'nav a{padding:11px 16px;color:#333;font-weight:600;text-decoration:none;white-space:nowrap}'
     + 'nav a.on{background:#b03;color:#fff}nav a:last-child{margin-left:auto}'
-    + 'main{max-width:960px;margin:0 auto;padding:16px}h1{font-size:21px;margin:4px 0 14px}'
+    + 'main{max-width:960px;margin:auto;padding:16px}h1{font-size:21px;margin:4px 0 14px}'
     + '.t{overflow-x:auto;max-width:100%}'
     + '.c{background:#fff;border:3px solid #ccc;margin-bottom:16px;padding:0 16px 14px}'
     + '.c h2{margin:0 -16px 12px;padding:7px 16px;background:#b03;color:#fff}'
@@ -199,17 +199,18 @@ const ESTILO = '*{box-sizing:border-box}'
     + 'label{display:block;font-weight:600;margin:10px 0 4px}'
     + 'input,select{font:inherit;padding:8px 10px;border:1px solid #bbb;max-width:100%}'
     + 'table{border-collapse:collapse;width:100%}'
-    + 'th,td{padding:9px 8px;border-bottom:1px solid #eee;text-align:left}th{background:#f7f7f7}'
-    + '.inactivo{color:#999}p.ok,p.error,.w{padding:10px 12px;border-left:4px solid}'
+    + 'th,td{padding:9px 10px;border-bottom:1px solid #eee;text-align:left}'
+    + 'th{background:#f2f2f2;font-size:13px}'
+    + 'tr:nth-child(2n) td{background:#fafafa}.n{text-align:right}'
+    + '.inactivo{color:#999}p.ok,p.error,.w{padding:10px;border-left:4px solid}'
     + 'p.ok{background:#efe;border-color:#171}p.error{background:#fee;border-color:#b22}'
     + '.w{background:#ffe;border-color:#eb0}.ok{color:#171}.error{color:#b22}'
-    + '.g{color:#171}.r{color:#777}.k{color:#666;font-size:13px}'
+    + '.g{color:#171}.r,.k{color:#777}.k{font-size:13px}'
     // Móvil: la lista de usuarios (#t) pasa a tarjetas; las demás tablas se deslizan.
-    + '@media(max-width:600px){main{padding:10px}.c{padding:0 10px}.c h2{margin:0 -10px 10px}'
-    + 'input{width:100%}#t tr:first-child{display:none}'
-    + '#t tr{display:block;padding:8px 0;border-bottom:1px solid #eee}'
-    + '#t td{display:inline-block;border:0;padding:2px 8px 2px 0}#t td:last-child{display:flex;gap:6px}'
-    + '#t td:last-child button{flex:1;margin:4px 0;padding:8px 4px}}';
+    + '@media(max-width:600px){main{padding:10px}.c{padding:0 10px}input{width:100%}'
+    + '#t tr:first-child{display:none}#t tr{display:block;padding:8px 0;border-bottom:1px solid #eee}'
+    + '#t td{display:inline-block;border:0;padding:2px 8px 2px 0;background:none}'
+    + '#t td:last-child{display:flex;gap:4px;margin-top:4px}}';
 
 /*
  * VELOCIDAD (medido el 22-09-2026): cada petición a la app tarda ~1,15 s pase lo que pase
@@ -321,7 +322,7 @@ function paginaUsuarios(token, msg) {
     const armar = (datos) => documento('Usuarios (' + n + ')', token, 'usuarios', aviso + mensajeHtml(msg)
         + '<p>' + enlace(token, 'nuevo', '', '+ Nuevo usuario', 'b p') + enlace(token, 'importar', '', 'Importar Excel', 'b') + '</p>'
         + '<div class="c t">' + formulario(token, 'lista', '<table id="t" data-s="' + token + '"' + conDatos(datos)
-            + '><tr><th>Usuario</th><th>Estado</th><th></th></tr></table>', BORRAR_CONFIRMA)
+            + '></table>', BORRAR_CONFIRMA)
         + '</div>' + scripts(['lista.js']));
     return cabeOno(armar, parteUsuarios(0));
 }
@@ -367,7 +368,8 @@ export function parteUsuarios(desde) {
 const LISTA_JS = '(function(){var T=document.getElementById("t"),s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x)n.textContent=x;if(c)n.className=c;return n}'
     + 'function b(v,x,c){var n=e("button",x,c);n.name="x";n.value=v;return n}'
-    + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios."));'
+    + 'function cab(t){var r=e("tr");t.forEach(function(x){r.appendChild(e("th",x))});T.appendChild(r)}'
+    + 'function pinta(){cab(["Usuario","Estado",""]);if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios."));'
     + 'L.forEach(function(l){var f=l.split("\\t"),a=f[1]=="1",r=e("tr",0,a?"":"inactivo"),d=e("td");'
     + 'd.appendChild(e("b",f[0]));if(f[2]){d.appendChild(e("br"));d.appendChild(e("small",f[2]))}r.appendChild(d);'
     + 'd=e("td");d.appendChild(e("span",a?"activo":"desactivado",a?"g":"r"));r.appendChild(d);'
@@ -394,24 +396,25 @@ function paginaContadores(token, msg) {
         + t.paginasCopia + ' copiadas)</p><div style="margin-bottom:10px">' + botonJs(token, 'csv.js', 'bajarCsv', 'p', 'Descargar CSV (Excel)')
         + formulario(token, 'cero', '<button class="x" onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
             + 'Descargue antes el CSV.\')">Poner a cero</button>', ' style="display:inline"') + '</div>'
-        + '<div class="c t"><table id="c" data-s="' + token + '"' + conDatos(datos) + '><tr><th>Persona</th><th>Impr.</th><th>Pág.</th>'
-        + '<th>Copias</th><th>Pág. copia</th><th>Total</th></tr></table></div>'
+        + '<div class="c t"><table id="c" data-s="' + token + '"' + conDatos(datos) + '></table></div>'
         + CARGA_JS + scripts(['contadores.js'])), parteCsv(0));
 }
 
 /*
  * contadores.js: pide el CSV por partes (el mismo que se descarga) y pinta la tabla.
- * Columnas del CSV: usuario;nombre;cédula;estado;impr;pág;copias;pág copia;total. Quien
+ * Columnas del CSV: usuario;nombre;estado;impr;pág;copias;pág copia;total. Quien
  * no imprimió nada, en gris. Todo con textContent: nada se interpreta como HTML.
  */
 const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x!=null)n.textContent=x;if(c)n.className=c;return n}'
-    + 'function pinta(){if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios ni nada contado."));'
-    + 'L.forEach(function(f){var r=e("tr",null,+f[8]?"":"inactivo"),d=e("td"),x=f[3]=="borrado"?"usuario borrado":f[1]+(f[3]=="desactivado"?" (desactivado)":"");'
+    + 'function cab(){var r=e("tr");["Persona","Impr.","Pág.","Copias","Pág. copia","Total"].forEach(function(x,i){'
+    + 'r.appendChild(e("th",x,i?"n":""))});T.appendChild(r)}'
+    + 'function pinta(){cab();if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios ni nada contado."));'
+    + 'L.forEach(function(f){var r=e("tr",null,+f[7]?"":"inactivo"),d=e("td"),x=f[2]=="borrado"?"usuario borrado":f[1]+(f[2]=="desactivado"?" (desactivado)":"");'
     + 'd.appendChild(e("b",f[0]));if(x){d.appendChild(e("br"));d.appendChild(e("small",x))}r.appendChild(d);'
-    + '[4,5,6,7].forEach(function(i){r.appendChild(e("td",f[i]))});d=e("td");d.appendChild(e("b",f[8]));r.appendChild(d);T.appendChild(r)})}'
+    + '[3,4,5,6].forEach(function(i){r.appendChild(e("td",f[i],"n"))});d=e("td",null,"n");d.appendChild(e("b",f[7]));r.appendChild(d);T.appendChild(r)})}'
     + 'function q(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
-    + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>8&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
+    + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>7&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
     + 'if(+m[1]>=0)p(+m[1]);else pinta()}'
     + 'function p(n){fetch("csv?s="+s+"&desde="+n).then(function(r){return r.text()}).then(q)}'
     + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)})()';
@@ -426,13 +429,13 @@ export function parteCsv(desde) {
     const lista = store.contadoresDeTodos();
     const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
     let texto = i0 === 0
-        ? 'Usuario;Nombre completo;Cedula;Estado;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n' : '';
+        ? 'Usuario;Nombre completo;Estado;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n' : '';
     let i = i0;
     const margen = 120;   // la línea SIGUIENTE y la de TOTAL
     for (; i < lista.length; i++) {
         const c = lista[i];
         const estado = c.quien === store.SIN_SESION ? '' : !c.existe ? 'borrado' : c.activo ? 'activo' : 'desactivado';
-        const linea = [persona(c.quien), c.nombreCompleto, c.cedula, estado]
+        const linea = [persona(c.quien), c.nombreCompleto, estado]
             .map((x) => String(x).replace(/[;\r\n"]/g, ' ')).join(';')
             + ';' + c.impresiones + ';' + c.paginas + ';'
             + c.copias + ';' + c.paginasCopia + ';' + (c.paginas + c.paginasCopia) + '\n';
@@ -444,7 +447,7 @@ export function parteCsv(desde) {
     if (i >= lista.length) {
         const t = store.totales();
         if (lista.length) {
-            texto += 'TOTAL;;;;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia + ';'
+            texto += 'TOTAL;;;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia + ';'
                 + (t.paginas + t.paginasCopia) + '\n';
         }
         return 'SIGUIENTE;-1\n' + texto;
@@ -466,11 +469,10 @@ const CSV_JS = 'function bajarCsv(b){var s=b.getAttribute("data-s"),t="",n=0;b.d
     + 't+=x.slice(m[0].length);var sig=+m[1];if(sig<0)fin();else pedir(sig)}).catch(function(e){fin(e)})}'
     + 'pedir(0)}';
 
-/** Campos de nombre completo y cédula, con lo que ya haya escrito (o se estaba escribiendo). */
+/** Campo del nombre completo, con lo que ya haya escrito (o se estaba escribiendo). */
 function camposDatos(v) {
     return campo('Nombre completo', '<input name="nombreCompleto" size="32" maxlength="' + config.NOMBRE_COMPLETO_MAX
-        + '" value="' + escapar((v && v.nombreCompleto) || '') + '">')
-        + campo('Cédula', '<input name="cedula" size="14" maxlength="20" value="' + escapar((v && v.cedula) || '') + '">');
+        + '" value="' + escapar((v && v.nombreCompleto) || '') + '">');
 }
 
 /** `previo`: lo que se escribió, para no hacérselo repetir si algo no era válido. */
@@ -485,7 +487,7 @@ function paginaNuevo(token, msg, previo) {
         + campo('PIN', campoPin()) + camposDatos(previo) + '<p><button class="p">Dar de alta</button></p>')
         + '<p class="k">Usuario: minúsculas, números y . _ - (el Nombre del driver). PIN: '
         + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos (la Contraseña del driver). '
-        + 'Nombre y cédula son opcionales.</p>'), ['usuarios', 'Usuarios']);
+        + 'El nombre completo es opcional.</p>'), ['usuarios', 'Usuarios']);
 }
 
 function paginaUsuario(token, nombre, msg) {
@@ -736,7 +738,7 @@ function aplicarCopia(copia) {
 
 /**
  * Aplica una importación ya revisada en el navegador: {filas: [[fila, usuario, pin,
- * nombreCompleto, cédula], ...]}. La impresora vuelve a validar cada fila con las
+ * nombreCompleto], ...]}. La impresora vuelve a validar cada fila con las
  * mismas reglas que el alta manual: la revisión del navegador es para el usuario, no
  * una garantía.
  */
@@ -746,7 +748,7 @@ function aplicarImportacion(datos) {
     }
     const filas = datos.filas.filter(Array.isArray).map((a) => ({
         fila: a[0], usuario: String(a[1] || ''), pin: String(a[2] === undefined ? '' : a[2]),
-        nombreCompleto: String(a[3] || ''), cedula: String(a[4] || ''),
+        nombreCompleto: String(a[3] || ''),
     }));
     const r = store.importarUsuarios(filas);
     const partes = [r.creados + ' usuario(s) creados'];
@@ -798,12 +800,12 @@ export function trozoSubida(token, d) {
 
 function paginaCopia(token, msg) {
     return documento('Copia de seguridad', token, 'ajustes', mensajeHtml(msg)
-        + panel('Descargar', '<p>Guarda en este PC una copia con usuarios, PIN, nombre, cédula, contadores y ajustes.</p>'
+        + panel('Descargar', '<p>Guarda en este PC una copia con usuarios, PIN, nombres, contadores y ajustes.</p>'
             + botonJs(token, 'copia-bajar.js', 'bajarCopia', 'p', 'Descargar copia'))
         + panel('Subir', '<p>Deja la impresora como estaba en esa copia (p. ej. tras reinstalar). No borra a nadie.</p>'
             + '<p><input type="file" id="f" accept=".json"></p>'
             + botonJs(token, 'copia-subir.js', 'subirCopia', 'p', 'Subir copia') + '<p id="e"></p>')
-        + '<p class="k">La copia lleva los PIN (cifrados de forma débil) y las cédulas: guárdela como confidencial.</p>'
+        + '<p class="k">La copia lleva los PIN (cifrados de forma débil): guárdela como confidencial.</p>'
         + CARGA_JS,
     ['ajustes', 'Ajustes']);
 }
@@ -907,7 +909,7 @@ const TABLA_JS = 'function leerTabla(f){return/\\.(csv|txt)$/i.test(f.name)?f.te
  * importar.js: revisa cada fila con las MISMAS reglas que el alta (la impresora las
  * vuelve a aplicar), enseña la vista previa sin mostrar los PIN, y sube sólo lo válido.
  * Si la primera fila son títulos, las columnas se buscan por nombre; si no, van en el
- * orden de la plantilla: usuario, PIN, nombre completo, cédula.
+ * orden de la plantilla: usuario, PIN, nombre completo.
  */
 const IMPORTAR_JS = 'var L=[];function $(i){return document.getElementById(i)}'
     + 'function bajarPlantilla(b){var s=b.getAttribute("data-s"),t="";function p(n){fetch("plantilla.txt?s="+s+"&desde="+n).then(function(r){return r.text()}).then(function(x){'
@@ -919,16 +921,16 @@ const IMPORTAR_JS = 'var L=[];function $(i){return document.getElementById(i)}'
     + 'var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m)throw"la sesión caducó, vuelva a entrar";x.slice(m[0].length).split("\\n").forEach(function(l){if(l)E[l.split("\\t")[0]]=1});'
     + 'return+m[1]>=0?p(+m[1]):E})}return p(0)}'
     + 'function revisar(){var f=$("f").files[0],e=$("e"),b=$("b");b.disabled=true;L=[];if(!f)return e.textContent="Elija el fichero.";e.className="";e.textContent="Leyendo…";'
-    + 'Promise.all([leerTabla(f),existentes(b.getAttribute("data-s"))]).then(function(r){var R=r[0],E=r[1],K=[0,1,2,3],U={},C={},nuevos=0,malos=0,ya=0,cab=R[0]&&R[0].c.join("|").toLowerCase();'
-    + 'if(cab&&/usuario/.test(cab)){K=["usuario","pin","nombre","c.dula"].map(function(k){return R[0].c.findIndex(function(x){return new RegExp(k).test(String(x||"").toLowerCase())})});R=R.slice(1)}'
+    + 'Promise.all([leerTabla(f),existentes(b.getAttribute("data-s"))]).then(function(r){var R=r[0],E=r[1],K=[0,1,2],U={},nuevos=0,malos=0,ya=0,cab=R[0]&&R[0].c.join("|").toLowerCase();'
+    + 'if(cab&&/usuario/.test(cab)){K=["usuario","pin","nombre"].map(function(k){return R[0].c.findIndex(function(x){return new RegExp(k).test(String(x||"").toLowerCase())})});R=R.slice(1)}'
     + 'var h="<table><tr><th>Fila</th><th>Usuario</th><th>Nombre</th><th>Estado</th></tr>",libres=' + config.USUARIOS_MAX + '-Object.keys(E).length;'
-    + 'R.forEach(function(w){var g=function(i){return i<0?"":String(w.c[i]==null?"":w.c[i]).trim()},u=g(K[0]).toLowerCase(),p=g(K[1]),n=g(K[2]).replace(/\\s+/g," "),c=g(K[3]).replace(/[\\s.-]/g,"").toUpperCase(),m="";'
-    + 'if(!u&&!p&&!n&&!c)return;if(!/^[a-z0-9._-]{1,' + config.USUARIO_MAX + '}$/.test(u))m="usuario no válido";'
+    + 'R.forEach(function(w){var g=function(i){return i<0?"":String(w.c[i]==null?"":w.c[i]).trim()},u=g(K[0]).toLowerCase(),p=g(K[1]),n=g(K[2]).replace(/\\s+/g," "),m="";'
+    + 'if(!u&&!p&&!n)return;if(!/^[a-z0-9._-]{1,' + config.USUARIO_MAX + '}$/.test(u))m="usuario no válido";'
     + 'else if(!/^[0-9]{' + config.PIN_MIN + ',' + config.PIN_MAX + '}$/.test(p))m="PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' números";'
-    + 'else if(n.length>' + config.NOMBRE_COMPLETO_MAX + '||/[<>;"]/.test(n))m="nombre no válido";else if(c&&!/^[0-9A-Z]{5,15}$/.test(c))m="cédula no válida";'
-    + 'else if(U[u])m="repetido en la fila "+U[u];else if(c&&C[c])m="cédula repetida en la fila "+C[c];'
-    + 'var z=E[u]&&!m;if(!m&&!z&&nuevos>=libres)m="no cabe: máximo ' + config.USUARIOS_MAX + ' usuarios";U[u]=U[u]||w.n;if(c)C[c]=C[c]||w.n;'
-    + 'if(m)malos++;else if(z)ya++;else{nuevos++;L.push([w.n,u,p,n,c])}'
+    + 'else if(n.length>' + config.NOMBRE_COMPLETO_MAX + '||/[<>;"]/.test(n))m="nombre no válido";'
+    + 'else if(U[u])m="repetido en la fila "+U[u];'
+    + 'var z=E[u]&&!m;if(!m&&!z&&nuevos>=libres)m="no cabe: máximo ' + config.USUARIOS_MAX + ' usuarios";U[u]=U[u]||w.n;'
+    + 'if(m)malos++;else if(z)ya++;else{nuevos++;L.push([w.n,u,p,n])}'
     + 'h+="<tr"+(m?\' class="error"\':z?\' class="inactivo"\':"")+"><td>"+w.n+"</td><td>"+u.replace(/</g,"&lt;")+"</td><td>"+n.replace(/</g,"&lt;")+"</td><td>"+(m||(z?"ya existe: se salta":"nuevo"))+"</td></tr>"});'
     + '$("v").innerHTML=h+"</table>";e.textContent=nuevos+" nuevos, "+ya+" ya existen, "+malos+" con errores"+(malos?" (se importan sólo los válidos)":"");b.disabled=!nuevos'
     + '}).catch(function(x){e.className="error";e.textContent="No se pudo leer: "+x})}'
@@ -1039,7 +1041,7 @@ export function atenderRuta(p, ahora) {
         return html(paginaUsuario(token, nombre));
     }
     if (p.ruta === '/alta' && cambia) {
-        const r = store.agregarUsuario(d.nombre, d.pin, { nombreCompleto: d.nombreCompleto, cedula: d.cedula });
+        const r = store.agregarUsuario(d.nombre, d.pin, { nombreCompleto: d.nombreCompleto });
         return r.ok
             ? html(paginaUsuarios(token, anotar({ ok: true, texto: 'Usuario ' + nombre + ' dado de alta.' })))
             : html(paginaNuevo(token, anotar({ ok: false, texto: r.error }), d));
@@ -1076,7 +1078,7 @@ export function atenderRuta(p, ahora) {
         }
         let msg;
         if (d.a === 'datos') {
-            const r = store.cambiarDatosUsuario(nombre, { nombreCompleto: d.nombreCompleto, cedula: d.cedula });
+            const r = store.cambiarDatosUsuario(nombre, { nombreCompleto: d.nombreCompleto });
             msg = r.ok ? { ok: true, texto: 'Datos guardados.' } : { ok: false, texto: r.error };
         } else if (d.a === 'pin') {
             msg = store.pinValido(d.pin) && store.cambiarPinUsuario(nombre, d.pin)
