@@ -146,7 +146,10 @@ export function revisar(alNuevo) {
     store.marcarVistos(nuevas.map((e) => e.clave), false);
     let entregados = 0;
     for (const e of nuevas) {
-        if (e.tipo !== 'PRINT' && e.tipo !== 'COPY') {
+        // Los escaneos se cuentan desde el 24-09-2026: el equipo los registra con sus
+        // páginas (medido: "#228 SCAN COMPLETED 1p"). Lo que no es trabajo de papel
+        // ni escaneo (tipo OTRO) se sigue descartando.
+        if (e.tipo !== 'PRINT' && e.tipo !== 'COPY' && e.tipo !== 'SCAN') {
             continue;
         }
         try {

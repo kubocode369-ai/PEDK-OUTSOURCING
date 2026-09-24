@@ -48,7 +48,7 @@ function vacio() {
         version: 1,
         /** [{nombre, huella, activo, creado, nombreCompleto?}] */
         usuarios: [],
-        /** {nombre: {impresiones, paginas, copias, paginasCopia}} */
+        /** {nombre: {impresiones, paginas, copias, paginasCopia, escaneos, paginasEscaneo}} */
         contadores: {},
         /** [{hora, quien, tipo, paginas, doc, estado, origen}] — lo más nuevo primero */
         registro: [],
@@ -493,6 +493,7 @@ export function restaurarTodo(copia) {
             const n = (v) => Math.max(0, Math.floor(Number(v)) || 0);
             d.contadores[String(quien).slice(0, 40)] = {
                 impresiones: n(c.impresiones), paginas: n(c.paginas), copias: n(c.copias), paginasCopia: n(c.paginasCopia),
+                escaneos: n(c.escaneos), paginasEscaneo: n(c.paginasEscaneo),
             };
         });
         contadores = Object.keys(d.contadores).length > 0;
@@ -789,6 +790,15 @@ export function validarUsuario(nombre, pin, ahora) {
 /* ------------------------------------------------------------------ */
 
 /**
+ * Los contadores de una persona recién puestos a cero. Los datos viejos no traen los
+ * campos de escaneo (se añadieron el 24-09-2026), así que todo lo que sale de aquí se
+ * completa con esto: las cuentas nunca deben dar NaN por un respaldo antiguo.
+ */
+function cero() {
+    return { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0, escaneos: 0, paginasEscaneo: 0 };
+}
+
+/**
  * Suma un trabajo del historial a una persona (o a SIN_SESION).
  * @param {string} quien
  * @param {{tipo: string, paginas: number, doc?: string, estado?: string, hora?: string, origen?: string}} t
@@ -796,11 +806,14 @@ export function validarUsuario(nombre, pin, ahora) {
 export function contar(quien, t) {
     const d = cargar();
     const clave = String(quien || SIN_SESION);
-    const c = d.contadores[clave] || { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
+    const c = Object.assign(cero(), d.contadores[clave]);
     const paginas = Math.max(0, Number(t.paginas) || 0);
     if (t.tipo === 'COPY') {
         c.copias += 1;
         c.paginasCopia += paginas;
+    } else if (t.tipo === 'SCAN') {
+        c.escaneos += 1;
+        c.paginasEscaneo += paginas;
     } else {
         c.impresiones += 1;
         c.paginas += paginas;
@@ -809,7 +822,7 @@ export function contar(quien, t) {
     d.registro.unshift({
         hora: t.hora || new Date().toISOString().slice(0, 19).replace('T', ' '),
         quien: clave,
-        tipo: t.tipo === 'COPY' ? 'COPY' : 'PRINT',
+        tipo: t.tipo === 'COPY' || t.tipo === 'SCAN' ? t.tipo : 'PRINT',
         paginas,
         doc: t.doc ? String(t.doc).slice(0, 40) : null,
         estado: t.estado || null,
@@ -826,7 +839,7 @@ export function contar(quien, t) {
 export function contadores() {
     const c = cargar().contadores;
     return Object.keys(c)
-        .map((quien) => Object.assign({ quien }, c[quien]))
+        .map((quien) => Object.assign({ quien }, cero(), c[quien]))
         .sort((a, b) => (b.paginas + b.paginasCopia) - (a.paginas + a.paginasCopia));
 }
 
@@ -838,13 +851,12 @@ export function contadores() {
  */
 export function contadoresDeTodos() {
     const d = cargar();
-    const cero = { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
     const filas = d.usuarios.map((u) => Object.assign({ quien: u.nombre, nombreCompleto: u.nombreCompleto || '',
-        existe: true, activo: u.activo !== false }, cero, d.contadores[u.nombre]));
+        existe: true, activo: u.activo !== false }, cero(), d.contadores[u.nombre]));
     Object.keys(d.contadores).forEach((quien) => {
         if (!d.usuarios.some((u) => u.nombre === quien)) {
             filas.push(Object.assign({ quien, nombreCompleto: '', existe: false, activo: false },
-                cero, d.contadores[quien]));
+                cero(), d.contadores[quien]));
         }
     });
     const total = (r) => r.paginas + r.paginasCopia;
@@ -852,7 +864,7 @@ export function contadoresDeTodos() {
 }
 
 export function contadorDe(quien) {
-    return cargar().contadores[quien] || { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
+    return Object.assign(cero(), cargar().contadores[quien]);
 }
 
 export function totales() {
@@ -861,8 +873,10 @@ export function totales() {
         s.paginas += r.paginas;
         s.copias += r.copias;
         s.paginasCopia += r.paginasCopia;
+        s.escaneos += r.escaneos;
+        s.paginasEscaneo += r.paginasEscaneo;
         return s;
-    }, { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 });
+    }, cero());
 }
 
 export function registro() {

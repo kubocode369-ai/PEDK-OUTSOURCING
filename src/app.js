@@ -266,7 +266,7 @@ function entrarConPin() {
         repintar();
         return;
     }
-    cuentaSesion = { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
+    cuentaSesion = { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0, escaneos: 0, paginasEscaneo: 0 };
     pagina = 0;
     if (modo === 'retencion') {
         cargarRetenidos();
@@ -288,10 +288,13 @@ function textoRestante() {
 }
 
 function textoCuenta() {
-    const c = cuentaSesion || { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0 };
+    const c = cuentaSesion || { impresiones: 0, paginas: 0, copias: 0, paginasCopia: 0, escaneos: 0, paginasEscaneo: 0 };
     let t = c.impresiones + ' impresión(es), ' + c.paginas + ' pág.';
     if (c.copias > 0) {
         t += ' · ' + c.copias + ' copia(s), ' + c.paginasCopia + ' pág.';
+    }
+    if (c.escaneos > 0) {
+        t += ' · ' + c.escaneos + ' escaneo(s), ' + c.paginasEscaneo + ' pág.';
     }
     return t;
 }
@@ -508,6 +511,9 @@ function alTrabajo(e) {
         if (e.tipo === 'COPY') {
             cuentaSesion.copias++;
             cuentaSesion.paginasCopia += e.paginas;
+        } else if (e.tipo === 'SCAN') {
+            cuentaSesion.escaneos++;
+            cuentaSesion.paginasEscaneo += e.paginas;
         } else {
             cuentaSesion.impresiones++;
             cuentaSesion.paginas += e.paginas;

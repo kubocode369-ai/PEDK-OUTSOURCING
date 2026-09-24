@@ -392,8 +392,8 @@ function paginaContadores(token, msg) {
     // La tabla la pinta el navegador con los datos del CSV (contadores.js): así salen todos
     // en una página, como en Usuarios. En la impresora sólo cabían unas pocas filas.
     return cabeOno((datos) => documento('Contadores', token, 'contadores', mensajeHtml(msg)
-        + '<p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> páginas (' + t.paginas + ' impresas, '
-        + t.paginasCopia + ' copiadas)</p><div style="margin-bottom:10px">' + botonJs(token, 'csv.js', 'bajarCsv', 'p', 'Descargar CSV (Excel)')
+        + '<p>Total: <b>' + (t.paginas + t.paginasCopia) + '</b> páginas de papel (' + t.paginas + ' impresas, '
+        + t.paginasCopia + ' copiadas) · ' + t.paginasEscaneo + ' escaneadas</p><div style="margin-bottom:10px">' + botonJs(token, 'csv.js', 'bajarCsv', 'p', 'Descargar CSV (Excel)')
         + formulario(token, 'cero', '<button class="x" onclick="return confirm(\'¿Poner TODOS los contadores a cero? '
             + 'Descargue antes el CSV.\')">Poner a cero</button>', ' style="display:inline"') + '</div>'
         + '<div class="c t"><table id="c" data-s="' + token + '"' + conDatos(datos) + '></table></div>'
@@ -402,19 +402,19 @@ function paginaContadores(token, msg) {
 
 /*
  * contadores.js: pide el CSV por partes (el mismo que se descarga) y pinta la tabla.
- * Columnas del CSV: usuario;nombre;estado;impr;pág;copias;pág copia;total. Quien
+ * Columnas del CSV: usuario;nombre;estado;impr;pág;copias;pág copia;escan;pág escan;total. Quien
  * no imprimió nada, en gris. Todo con textContent: nada se interpreta como HTML.
  */
 const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x!=null)n.textContent=x;if(c)n.className=c;return n}'
-    + 'function cab(){var r=e("tr");["Persona","Impr.","Pág.","Copias","Pág. copia","Total"].forEach(function(x,i){'
+    + 'function cab(){var r=e("tr");["Persona","Impr.","Pág.","Copias","Pág. copia","Escan.","Pág. escan.","Papel"].forEach(function(x,i){'
     + 'r.appendChild(e("th",x,i?"n":""))});T.appendChild(r)}'
     + 'function pinta(){cab();if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios ni nada contado."));'
-    + 'L.forEach(function(f){var r=e("tr",null,+f[7]?"":"inactivo"),d=e("td"),x=f[2]=="borrado"?"usuario borrado":f[1]+(f[2]=="desactivado"?" (desactivado)":"");'
+    + 'L.forEach(function(f){var r=e("tr",null,+f[9]||+f[8]?"":"inactivo"),d=e("td"),x=f[2]=="borrado"?"usuario borrado":f[1]+(f[2]=="desactivado"?" (desactivado)":"");'
     + 'd.appendChild(e("b",f[0]));if(x){d.appendChild(e("br"));d.appendChild(e("small",x))}r.appendChild(d);'
-    + '[3,4,5,6].forEach(function(i){r.appendChild(e("td",f[i],"n"))});d=e("td",null,"n");d.appendChild(e("b",f[7]));r.appendChild(d);T.appendChild(r)})}'
+    + '[3,4,5,6,7,8].forEach(function(i){r.appendChild(e("td",f[i],"n"))});d=e("td",null,"n");d.appendChild(e("b",f[9]));r.appendChild(d);T.appendChild(r)})}'
     + 'function q(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
-    + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>7&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
+    + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>9&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
     + 'if(+m[1]>=0)p(+m[1]);else pinta()}'
     + 'function p(n){fetch("csv?s="+s+"&desde="+n).then(function(r){return r.text()}).then(q)}'
     + 'var D=T.getAttribute("data-d");D!=null?q(D):p(0)})()';
@@ -429,7 +429,8 @@ export function parteCsv(desde) {
     const lista = store.contadoresDeTodos();
     const i0 = Math.max(0, Math.floor(Number(desde)) || 0);
     let texto = i0 === 0
-        ? 'Usuario;Nombre completo;Estado;Impresiones;Paginas impresas;Copias;Paginas copiadas;TOTAL paginas\n' : '';
+        ? 'Usuario;Nombre completo;Estado;Impresiones;Paginas impresas;Copias;Paginas copiadas;'
+            + 'Escaneos;Paginas escaneadas;TOTAL paginas de papel\n' : '';
     let i = i0;
     const margen = 120;   // la línea SIGUIENTE y la de TOTAL
     for (; i < lista.length; i++) {
@@ -437,8 +438,8 @@ export function parteCsv(desde) {
         const estado = c.quien === store.SIN_SESION ? '' : !c.existe ? 'borrado' : c.activo ? 'activo' : 'desactivado';
         const linea = [persona(c.quien), c.nombreCompleto, estado]
             .map((x) => String(x).replace(/[;\r\n"]/g, ' ')).join(';')
-            + ';' + c.impresiones + ';' + c.paginas + ';'
-            + c.copias + ';' + c.paginasCopia + ';' + (c.paginas + c.paginasCopia) + '\n';
+            + ';' + c.impresiones + ';' + c.paginas + ';' + c.copias + ';' + c.paginasCopia
+            + ';' + c.escaneos + ';' + c.paginasEscaneo + ';' + (c.paginas + c.paginasCopia) + '\n';
         if (i > i0 && bytesUtf8(texto + linea) + margen > config.WEB_MAX_BYTES) {
             break;
         }
@@ -447,8 +448,8 @@ export function parteCsv(desde) {
     if (i >= lista.length) {
         const t = store.totales();
         if (lista.length) {
-            texto += 'TOTAL;;;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia + ';'
-                + (t.paginas + t.paginasCopia) + '\n';
+            texto += 'TOTAL;;;' + t.impresiones + ';' + t.paginas + ';' + t.copias + ';' + t.paginasCopia
+                + ';' + t.escaneos + ';' + t.paginasEscaneo + ';' + (t.paginas + t.paginasCopia) + '\n';
         }
         return 'SIGUIENTE;-1\n' + texto;
     }
@@ -500,7 +501,8 @@ function paginaUsuario(token, nombre, msg) {
     const campoNombre = '<input type="hidden" name="nombre" value="' + escapar(u.nombre) + '">';
     return documento('Usuario ' + u.nombre, token, 'usuarios', mensajeHtml(msg)
         + '<p><span class="' + (inactivo ? 'r">desactivado' : 'g">activo') + '</span> ' + c.impresiones + ' impr., '
-        + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág.</p>'
+        + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág. · '
+        + c.escaneos + ' escaneos, ' + c.paginasEscaneo + ' pág.</p>'
         // Formularios separados: Enter en un campo pulsa el primer botón de SU formulario.
         + panel('Datos', formulario(token, 'cambiar', campoNombre + camposDatos(u)
             + '<p><button class="p" name="a" value="datos">Guardar datos</button></p>'))

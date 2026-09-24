@@ -346,11 +346,37 @@ hablar(); console.log('· Historial'); silenciar();
     const n1 = historial.revisar((e) => vistos.push(e));
     const n2 = historial.revisar((e) => vistos.push(e));
     hablar();
-    check('entrega impresión y copia, no el escaneo', n1 === 2 && vistos.map((v) => v.tipo).join() === 'PRINT,COPY', JSON.stringify(vistos));
-    check('lleva las páginas del equipo', vistos[0].paginas === 3 && vistos[1].paginas === 2);
+    check('entrega impresión, copia y escaneo', n1 === 3
+        && vistos.map((v) => v.tipo).join() === 'PRINT,COPY,SCAN', JSON.stringify(vistos));
+    check('lleva las páginas del equipo', vistos[0].paginas === 3 && vistos[1].paginas === 2
+        && vistos[2].paginas === 4);
     check('no entrega dos veces lo mismo', n2 === 0);
     store._recargar();
     check('lo contado se recuerda tras reiniciar la app', historial.revisar(() => {}) === 0);
+    silenciar();
+
+    // Los escaneos van a su propio contador: no ensucian las impresiones (que es lo que
+    // se factura) ni el total de papel.
+    equipo();
+    store.agregarUsuario('esc', '1234');
+    store.contar('esc', { tipo: 'PRINT', paginas: 2 });
+    store.contar('esc', { tipo: 'SCAN', paginas: 3 });
+    store.contar('esc', { tipo: 'SCAN', paginas: 1 });
+    const ce = store.contadorDe('esc');
+    hablar();
+    check('el escaneo suma en escaneos, no en impresiones',
+        ce.impresiones === 1 && ce.paginas === 2 && ce.escaneos === 2 && ce.paginasEscaneo === 4, JSON.stringify(ce));
+    check('el total de papel no cuenta lo escaneado', store.totales().paginas === 2);
+    check('y queda en el registro con su tipo', store.registro()[0].tipo === 'SCAN', JSON.stringify(store.registro()[0]));
+    silenciar();
+
+    // Contadores viejos (de antes del 24-09-2026) no traen los campos de escaneo.
+    equipo({ store: { impresionPin: { usuarios: [], contadores: { viejo: { impresiones: 2, paginas: 5, copias: 1, paginasCopia: 1 } } } } });
+    store._recargar();
+    const cv = store.contadorDe('viejo');
+    hablar();
+    check('un contador viejo se lee con los escaneos a cero, sin NaN',
+        cv.escaneos === 0 && cv.paginasEscaneo === 0 && store.totales().paginasEscaneo === 0, JSON.stringify(cv));
     silenciar();
 }
 
@@ -937,7 +963,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         };
         new Function(...Object.keys(ctx), pedir('/contadores.js').body)(...Object.values(ctx));
         await esperar(30);
-        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 6 && r.children[0].tag === 'td').map((r) => ({
+        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 8 && r.children[0].tag === 'td').map((r) => ({
             nombre: r.children[0].children[0].textContent,
             detalle: (r.children[0].children[2] || {}).textContent || '',
             celdas: r.children.slice(1).map((c) => (c.children[0] || c).textContent),
@@ -1114,7 +1140,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         && web.bytesUtf8(pedir('/contadores', 'GET', 's=' + s3).body) <= config.WEB_MAX_BYTES, vc.mayor);
     check('contadores: salen TODOS en una sola página', vc.filas.length === store.contadoresDeTodos().length,
         vc.filas.length + ' de ' + store.contadoresDeTodos().length);
-    check('quien no se identificó sale como "Sin identificar"', vc.filas.some((f) => f.nombre === 'Sin identificar' && f.celdas[4] === '7'));
+    check('quien no se identificó sale como "Sin identificar"', vc.filas.some((f) => f.nombre === 'Sin identificar' && f.celdas[6] === '7'));
 
     // El CSV lo junta el navegador: se ejecuta el script de verdad con fetch simulado.
     const js = pedir('/csv.js').body;
@@ -1145,7 +1171,8 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         && /^TOTAL;/.test(lineas[lineas.length - 1]), bajado && (bajado.error || lineas.length));
     const tot = store.totales();
     check('el TOTAL del CSV cuadra', lineas.length && lineas[lineas.length - 1] === 'TOTAL;;;' + tot.impresiones + ';'
-        + tot.paginas + ';' + tot.copias + ';' + tot.paginasCopia + ';' + (tot.paginas + tot.paginasCopia), lineas[lineas.length - 1]);
+        + tot.paginas + ';' + tot.copias + ';' + tot.paginasCopia + ';' + tot.escaneos + ';' + tot.paginasEscaneo
+        + ';' + (tot.paginas + tot.paginasCopia), lineas[lineas.length - 1]);
     check('el CSV pide sesión', !/^SIGUIENTE/.test(pedir('/csv', 'GET', 'desde=0').body));
 
     pedir('/cero', 'GET', 's=' + s3);
@@ -1191,8 +1218,8 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('la página de contadores enseña al que tiene cero, en gris', vc2.filas.some((f) => f.nombre === 'anon' && f.clase === 'inactivo')
         && vc2.filas.some((f) => f.nombre === 'fantasma' && f.detalle === 'usuario borrado'), JSON.stringify(vc2.filas.slice(0, 4)));
     const p0 = pedir('/csv', 'GET', 's=' + s3 + '&desde=0').body;
-    check('el CSV lleva nombre completo y estado', /\njperez;José Pérez;activo;1;3;0;0;3\n/.test(p0)
-        && /\nanon;a x b;activo;0;0;0;0;0\n/.test(p0) && /\nfantasma;;borrado;1;2/.test(p0), p0);
+    check('el CSV lleva nombre completo y estado', /\njperez;José Pérez;activo;1;3;0;0;0;0;3\n/.test(p0)
+        && /\nanon;a x b;activo;0;0;0;0;0;0;0\n/.test(p0) && /\nfantasma;;borrado;1;2/.test(p0), p0);
 
     // Viajan en la copia de seguridad y vuelven al restaurar.
     const copia = JSON.parse(JSON.stringify(store.respaldo()));

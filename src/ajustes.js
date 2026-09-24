@@ -315,15 +315,17 @@ function renderContadores() {
     for (const r of info.items) {
         const sin = r.quien === store.SIN_SESION;
         w.push(etiqueta('q' + r.quien, 12, y, 150, 20, recortar(sin ? 'Sin sesión' : r.quien, 16),
-            sin && (r.impresiones + r.copias) > 0 ? COLOR.peligro : COLOR.texto));
+            sin && (r.impresiones + r.copias + r.escaneos) > 0 ? COLOR.peligro : COLOR.texto));
         w.push(etiqueta('c' + r.quien, 166, y, 302, 20,
-            r.impresiones + ' imp. ' + r.paginas + ' pág. · ' + r.copias + ' cop. ' + r.paginasCopia + ' pág.', COLOR.suave));
+            r.impresiones + ' imp. ' + r.paginas + ' pág. · ' + r.copias + ' cop. ' + r.paginasCopia + ' pág.'
+            + (r.escaneos ? ' · ' + r.escaneos + ' esc.' : ''), COLOR.suave));
         y += 34;
     }
     w.push(...paginador('pg', 12, 214, info, () => { pagina--; repintar(); }, () => { pagina++; repintar(); }));
     const t = store.totales();
     w.push(etiqueta('tot', 12, 250, 456, 20,
-        'Total: ' + t.impresiones + ' impresiones, ' + t.paginas + ' pág. · ' + t.copias + ' copias, ' + t.paginasCopia + ' pág.',
+        'Total: ' + t.impresiones + ' impr. ' + t.paginas + ' pág. · ' + t.copias + ' cop. ' + t.paginasCopia
+        + ' pág. · ' + t.escaneos + ' esc. ' + t.paginasEscaneo + ' pág.',
         COLOR.texto));
     w.push(boton('reiniciar', 12, 276, 220, 34, confirmar === 'reiniciar' ? 'Toque otra vez' : 'Poner a cero',
         COLOR.peligro, () => {

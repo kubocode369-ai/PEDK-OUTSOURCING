@@ -98,7 +98,7 @@ export function informe() {
     const a = store.ajustes();
     const sin = store.contadorDe(store.SIN_SESION);
     out.push('Modo ' + a.modo + ' · bloqueo ' + (a.bloqueoActivo ? 'ON' : 'off')
-        + ' · sin sesion: ' + (sin.impresiones + sin.copias) + ' trab.');
+        + ' · sin sesion: ' + (sin.impresiones + sin.copias + sin.escaneos) + ' trab.');
     if (ultimoResultado) {
         out.push('Prueba: ' + ultimoResultado);
     }
