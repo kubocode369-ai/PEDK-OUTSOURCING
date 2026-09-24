@@ -314,6 +314,10 @@ export function makePedk(opts = {}) {
     const arrancados = [];
     /** El último trabajo arrancado, para avisar de sus cambios de estado. */
     let ultimo = null;
+    /** Las libretas de destino creadas para los trabajos de escaneo. */
+    const libretas = [];
+    /** Las respuestas a la espera del equipo: 'continue' (otra página) o 'finish'. */
+    const seguidos = [];
     if (opts.trabajos) {
         class Trabajo {
             constructor(tipo) { this.tipo = tipo; this.estado = 'JBSts_Init'; this.oyentes = []; }
@@ -332,6 +336,14 @@ export function makePedk(opts = {}) {
                 return opts.copiaDevuelve === undefined ? 0 : opts.copiaDevuelve;
             }
             cancel() { this.avisar('JBSts_Cancelling'); return true; }
+            /** Otra página: el equipo vuelve a escanear y sigue esperando. */
+            continue() { seguidos.push('continue'); this.avisar('JBSts_Running'); return 0; }
+            /**
+             * Se acabó. Como el equipo de verdad: NO contesta en el acto (medido, tardó
+             * ~50 s en dar el trabajo por terminado). La prueba avisa cuando quiere con
+             * `mock.copiaAvisa('JBSts_Finish')`.
+             */
+            finish() { seguidos.push('finish'); return undefined; }
             /** El equipo avisa del cambio de estado, como hace el firmware de verdad. */
             avisar(e) {
                 this.estado = e;
@@ -349,13 +361,32 @@ export function makePedk(opts = {}) {
                 return true;
             }
         }
+        /**
+         * La libreta que viaja DENTRO del trabajo de escaneo: guarda a dónde se manda,
+         * para que las pruebas comprueben el destino de cada persona.
+         */
+        class LibretaTrabajo {
+            constructor() { this.correos = []; this.smb = []; libretas.push(this); }
+            addMailAddr(a) { this.correos.push(String(a)); return this.correos.length; }
+            addSmbAddr(nombre, host, login, ruta, clave, puerto, anonimo) {
+                this.smb.push({ nombre, host, login, ruta, clave, puerto, anonimo });
+                return this.smb.length;
+            }
+        }
         /** Las clases de valor del SDK: guardan el número o el texto que se les pasa. */
         const Valor = (nombre) => ({ [nombre]: class { constructor(v) { this.valor = v; } } })[nombre];
         trabajos = {
             copy: { CopyJob: class CopyJob extends Trabajo {}, CopyParameterSet: Parametros,
                 Copies: Valor('Copies'), CopyMode: Valor('CopyMode'), CopyScanSource: Valor('CopyScanSource'),
                 JobStateListener: class JobStateListener {} },
-            scan: { ScanJob: class ScanJob extends Trabajo {}, ScanParameterSet: Parametros, Resolution: Valor('Resolution'), JobStateListener: class JobStateListener {} },
+            scan: { ScanJob: class ScanJob extends Trabajo {}, ScanParameterSet: Parametros,
+                Resolution: Valor('Resolution'), ColorType: Valor('ColorType'),
+                FileFmtType: Valor('FileFmtType'), ScanMode: Valor('ScanMode'),
+                AddressBookParam: LibretaTrabajo, JobStateListener: class JobStateListener {} },
+            addressbook: {
+                getEmailAddrNum: () => 2, getSMBAddrNum: () => 1, getFTPAddrNum: () => 0,
+                getEmailAddrList: () => [{ index: 0, mail_name: 'Ana', mail_addr: 'ana@ejemplo.com' }],
+            },
             quota: {
                 QuotaParam: class QuotaParam {},
                 getLocalQuotaData: () => ({ quota_switch: false, quota_mode: 'QUOTA_MODE_PAGE', user_quota: '0' }),
@@ -380,6 +411,7 @@ export function makePedk(opts = {}) {
     };
     if (trabajos) {
         pedk.quota = trabajos.quota;
+        pedk.addressbook = trabajos.addressbook;
     }
 
     return {
@@ -387,6 +419,8 @@ export function makePedk(opts = {}) {
         pedk,
         switches,
         arrancados,
+        libretas,
+        seguidos,
         /** El equipo avisa de un cambio de estado del último trabajo (JBSts_Running…). */
         copiaAvisa: (estado) => { if (ultimo) ultimo.avisar(estado); },
         liberados,

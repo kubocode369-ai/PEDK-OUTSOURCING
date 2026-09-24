@@ -473,7 +473,10 @@ const CSV_JS = 'function bajarCsv(b){var s=b.getAttribute("data-s"),t="",n=0;b.d
 /** Campo del nombre completo, con lo que ya haya escrito (o se estaba escribiendo). */
 function camposDatos(v) {
     return campo('Nombre completo', '<input name="nombreCompleto" size="32" maxlength="' + config.NOMBRE_COMPLETO_MAX
-        + '" value="' + escapar((v && v.nombreCompleto) || '') + '">');
+        + '" value="' + escapar((v && v.nombreCompleto) || '') + '">')
+        // El correo es opcional: sólo sirve para que pueda escanear a su correo.
+        + campo('Correo', '<input name="correo" size="32" maxlength="'
+            + config.CORREO_MAX + '" value="' + escapar((v && v.correo) || '') + '">');
 }
 
 /** `previo`: lo que se escribió, para no hacérselo repetir si algo no era válido. */
@@ -500,12 +503,12 @@ function paginaUsuario(token, nombre, msg) {
     const inactivo = u.activo === false;
     const campoNombre = '<input type="hidden" name="nombre" value="' + escapar(u.nombre) + '">';
     return documento('Usuario ' + u.nombre, token, 'usuarios', mensajeHtml(msg)
-        + '<p><span class="' + (inactivo ? 'r">desactivado' : 'g">activo') + '</span> ' + c.impresiones + ' impr., '
-        + c.paginas + ' pág. · ' + c.copias + ' copias, ' + c.paginasCopia + ' pág. · '
-        + c.escaneos + ' escaneos, ' + c.paginasEscaneo + ' pág.</p>'
+        + '<p><span class="' + (inactivo ? 'r">desactivado' : 'g">activo') + '</span> ' + c.impresiones + ' impr. '
+        + c.paginas + ' pág. · ' + c.copias + ' cop. ' + c.paginasCopia + ' pág. · '
+        + c.escaneos + ' esc. ' + c.paginasEscaneo + ' pág.</p>'
         // Formularios separados: Enter en un campo pulsa el primer botón de SU formulario.
         + panel('Datos', formulario(token, 'cambiar', campoNombre + camposDatos(u)
-            + '<p><button class="p" name="a" value="datos">Guardar datos</button></p>'))
+            + '<p><button class="p" name="a" value="datos">Guardar</button></p>'))
         + panel('PIN y estado', formulario(token, 'cambiar', campoNombre + campo('PIN nuevo', campoPin())
             + '<p><button class="p" name="a" value="pin">Cambiar PIN</button>'
             + '<button name="a" value="' + (inactivo ? 'activar">Activar' : 'desactivar">Desactivar') + '</button>'
@@ -541,20 +544,42 @@ function paginaAjustes(token, msg) {
     return documento('Ajustes', token, 'ajustes', mensajeHtml(msg) + panel('Protección', formulario(token, 'ajuste',
         '<table>'
         + fila('Modo', a.modo === 'retencion' ? 'retención' : 'sesión',
-            botonA('modo', a.modo === 'retencion' ? 'Pasar a sesión' : 'Pasar a retención'))
+            botonA('modo', a.modo === 'retencion' ? 'A sesión' : 'A retención'))
         + fila('Bloqueo', a.bloqueoActivo ? 'ENCENDIDO' : 'apagado', a.bloqueoActivo
-            ? botonA('bloqueo', 'Apagar', 'x', '¿Apagar? Imprimirá cualquiera.') : botonA('bloqueo', 'Encender', 'p'))
+            ? botonA('bloqueo', 'Apagar', 'x', '¿Apagar el bloqueo?') : botonA('bloqueo', 'Encender', 'p'))
         + fila('Copia', a.bloquearCopia ? 'con PIN' : 'libre', botonA('copia', a.bloquearCopia ? 'Libre' : 'Con PIN'))
         + fila('Escaneo', a.bloquearEscaneo ? 'con PIN' : 'libre', botonA('escaneo', a.bloquearEscaneo ? 'Libre' : 'Con PIN'))
         + fila('Sesión', '<select name="minutos">' + minutos + '</select> min', botonA('minutos', 'Guardar'))
         // En retención la impresión desde PC está siempre abierta (la vigila el guardián):
         // sólo informa en modo sesión.
-        + '</table><p class="k">' + (a.modo === 'sesion' ? 'Impresión desde PC: ' + (b === null ? '¿?' : b ? 'bloqueada' : 'abierta') + '. ' : '')
-        + botonA('desbloquear', 'Desbloquear equipo', 'x', '¿Desbloquear todo?') + '</p>'))
+        + '</table><p class="k">' + (a.modo === 'sesion' ? 'Impresión PC: ' + (b === null ? '¿?' : b ? 'bloqueada' : 'abierta') + '. ' : '')
+        + botonA('desbloquear', 'Desbloquear', 'x', '¿Seguro?') + '</p>'))
         // Un formulario GET con un botón por destino: el token va una vez, no cuatro.
         + panel('Mantenimiento', '<form><input type="hidden" name="s" value="' + token + '">'
-            + [['copia', 'Copia de seguridad'], ['pinadmin', 'PIN admin']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
+            + [['copia', 'Respaldo'], ['pinadmin', 'PIN admin'], ['carpeta', 'Carpeta']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
             + '</form>'));
+}
+
+/**
+ * La carpeta compartida a donde va lo escaneado, con una subcarpeta por persona.
+ * La contraseña no se devuelve nunca a la página: se enseña si hay una guardada y se
+ * deja en blanco para no tocarla.
+ */
+function paginaCarpeta(token, msg) {
+    const c = store.carpetaEscaneo() || {};
+    const campoT = (etiq, nombre, valor, extra) => campo(etiq, '<input name="' + nombre + '" size="26" value="'
+        + escapar(valor || '') + '"' + (extra || '') + '>');
+    return documento('Carpeta de escaneos', token, 'ajustes', mensajeHtml(msg) + panel('Carpeta compartida',
+        formulario(token, 'carpeta', campoT('Servidor o IP', 'servidor', c.servidor)
+            + campoT('Carpeta', 'ruta', c.ruta) + campoT('Usuario', 'usuario', c.usuario)
+            + campo('Contraseña', '<input name="clave" type="password" size="26" placeholder="'
+                + (c.clave ? 'sin cambios' : '') + '">')
+            + campoT('Puerto', 'puerto', c.puerto || 445, ' size="6"')
+            + '<p><button class="p">Guardar</button>'
+            + '<button class="x" name="quitar" value="1" onclick="return confirm(\'¿Quitar la carpeta?\')">Quitar</button></p>')
+        + '<p class="k">Cada persona recibe lo suyo en una subcarpeta con su usuario. '
+        + 'Use una cuenta que sólo pueda escribir ahí: la contraseña viaja en la copia de seguridad.</p>'),
+    ['ajustes', 'Ajustes']);
 }
 
 function paginaPinAdmin(token, msg) {
@@ -1038,6 +1063,18 @@ export function atenderRuta(p, ahora) {
     if (p.ruta === '/pinadmin' && !cambia) {
         return html(paginaPinAdmin(token));
     }
+    if (p.ruta === '/carpeta' && !cambia) {
+        return html(paginaCarpeta(token));
+    }
+    if (p.ruta === '/carpeta' && cambia) {
+        const previa = store.carpetaEscaneo();
+        // Contraseña en blanco = dejar la que había: la página nunca la muestra.
+        const r = acciones.fijarCarpetaEscaneo(d.quitar ? null : {
+            servidor: d.servidor, ruta: d.ruta, usuario: d.usuario, puerto: d.puerto,
+            clave: d.clave || (previa && previa.clave) || '',
+        });
+        return html(paginaCarpeta(token, anotar(deAccion(r))));
+    }
     if (p.ruta === '/nuevo') {
         return html(paginaNuevo(token));
     }
@@ -1045,7 +1082,7 @@ export function atenderRuta(p, ahora) {
         return html(paginaUsuario(token, nombre));
     }
     if (p.ruta === '/alta' && cambia) {
-        const r = store.agregarUsuario(d.nombre, d.pin, { nombreCompleto: d.nombreCompleto });
+        const r = store.agregarUsuario(d.nombre, d.pin, { nombreCompleto: d.nombreCompleto, correo: d.correo });
         return r.ok
             ? html(paginaUsuarios(token, anotar({ ok: true, texto: 'Usuario ' + nombre + ' dado de alta.' })))
             : html(paginaNuevo(token, anotar({ ok: false, texto: r.error }), d));
@@ -1082,7 +1119,7 @@ export function atenderRuta(p, ahora) {
         }
         let msg;
         if (d.a === 'datos') {
-            const r = store.cambiarDatosUsuario(nombre, { nombreCompleto: d.nombreCompleto });
+            const r = store.cambiarDatosUsuario(nombre, { nombreCompleto: d.nombreCompleto, correo: d.correo });
             msg = r.ok ? { ok: true, texto: 'Datos guardados.' } : { ok: false, texto: r.error };
         } else if (d.a === 'pin') {
             msg = store.pinValido(d.pin) && store.cambiarPinUsuario(nombre, d.pin)

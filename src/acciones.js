@@ -140,6 +140,17 @@ export function fijarBloqueoEscaneo(bloquear) {
     return res(r.ok, r.resumen);
 }
 
+/**
+ * La carpeta compartida a donde van los escaneos. Pasar algo sin servidor la quita,
+ * y entonces nadie ve "Mi carpeta".
+ */
+export function fijarCarpetaEscaneo(datos) {
+    const c = store.normalizarCarpeta(datos);
+    store.cambiarAjuste('carpetaEscaneo', c);
+    avisar();
+    return c ? res(true, 'Carpeta guardada: ' + c.servidor) : res(true, 'Carpeta quitada', 'aviso');
+}
+
 export function desbloquearTodo() {
     store.cambiarAjuste('bloqueoActivo', false);
     const r = cerradura.abrir();

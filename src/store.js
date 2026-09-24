@@ -70,6 +70,16 @@ function vacio() {
             bloquearCopia: false,
             /** Bloquear también el escaneo (panel y desde un PC) fuera de sesión. */
             bloquearEscaneo: false,
+            /**
+             * La carpeta compartida a donde va lo que se escanea, con una subcarpeta por
+             * persona. {servidor, ruta, usuario, clave, puerto}. Sin servidor, la opción
+             * "Mi carpeta" no se le ofrece a nadie.
+             *
+             * OJO: la contraseña se guarda tal cual porque hay que dársela al equipo en
+             * cada trabajo, y por tanto viaja en la copia de seguridad. Use una cuenta
+             * de sólo escritura en esa carpeta, no la del administrador del PC.
+             */
+            carpetaEscaneo: null,
             minutosSesion: config.MINUTOS_SESION_DEFECTO,
             huellaAdmin: null,
         },
@@ -229,6 +239,7 @@ function normalizar(d) {
         base.ajustes.bloqueoActivo = !!a.bloqueoActivo;
         base.ajustes.bloquearCopia = !!a.bloquearCopia;
         base.ajustes.bloquearEscaneo = !!a.bloquearEscaneo;
+        base.ajustes.carpetaEscaneo = normalizarCarpeta(a.carpetaEscaneo);
         if (config.MINUTOS_SESION_OPCIONES.indexOf(a.minutosSesion) >= 0) {
             base.ajustes.minutosSesion = a.minutosSesion;
         }
@@ -430,6 +441,7 @@ export function restaurarUsuarios(entrada) {
         // que ya hubiera (una copia vieja no borra lo que se escribió después).
         const extra = {};
         if (u.nombreCompleto) extra.nombreCompleto = normalizarNombreCompleto(u.nombreCompleto).slice(0, config.NOMBRE_COMPLETO_MAX);
+        if (u.correo && correoValido(u.correo)) extra.correo = normalizarCorreo(u.correo);
         const ya = d.usuarios.filter((x) => x.nombre === n)[0];
         if (ya) {
             ya.huella = huellaNueva;
@@ -505,6 +517,7 @@ export function restaurarTodo(copia) {
     const aj = d.ajustes;
     aj.bloquearCopia = a.bloquearCopia;
     aj.bloquearEscaneo = a.bloquearEscaneo;
+    aj.carpetaEscaneo = a.carpetaEscaneo;
     aj.minutosSesion = a.minutosSesion;
     aj.huellaAdmin = a.huellaAdmin;
     guardar();
@@ -544,6 +557,35 @@ export function huella(nombre, pin) {
 /* ------------------------------------------------------------------ */
 /* Ajustes y administrador                                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Deja la carpeta en {servidor, ruta, usuario, clave, puerto} o en null. Sin servidor
+ * no hay carpeta: media configuración es peor que ninguna.
+ */
+export function normalizarCarpeta(c) {
+    if (!c || typeof c !== 'object') {
+        return null;
+    }
+    const texto = (v, max) => String(v === undefined || v === null ? '' : v)
+        .replace(/[<>;"\r\n\t]/g, '').trim().slice(0, max);
+    const servidor = texto(c.servidor, 60);
+    if (!servidor) {
+        return null;
+    }
+    const puerto = Math.floor(Number(c.puerto));
+    return {
+        servidor,
+        ruta: texto(c.ruta, 80),
+        usuario: texto(c.usuario, 40),
+        clave: texto(c.clave, 40),
+        puerto: puerto > 0 && puerto <= 65535 ? puerto : 445,
+    };
+}
+
+/** La carpeta compartida de los escaneos, o null si no hay ninguna configurada. */
+export function carpetaEscaneo() {
+    return cargar().ajustes.carpetaEscaneo || null;
+}
 
 export function ajustes() {
     return cargar().ajustes;
@@ -597,6 +639,11 @@ export function usuarios() {
     return cargar().usuarios.slice().sort((a, b) => (a.nombre < b.nombre ? -1 : 1));
 }
 
+/** La ficha de una persona, o null. */
+export function usuario(nombre) {
+    return buscar(nombre);
+}
+
 function buscar(nombre) {
     const n = normalizarUsuario(nombre);
     return cargar().usuarios.filter((u) => u.nombre === n)[0] || null;
@@ -621,7 +668,21 @@ function validarDatos(datos) {
     if (nombreCompleto.length > config.NOMBRE_COMPLETO_MAX) {
         return { ok: false, error: 'Nombre completo de hasta ' + config.NOMBRE_COMPLETO_MAX + ' letras' };
     }
-    return { ok: true, datos: { nombreCompleto } };
+    const correo = normalizarCorreo(datos && datos.correo);
+    if (correo && !correoValido(correo)) {
+        return { ok: false, error: 'Correo no válido' };
+    }
+    return { ok: true, datos: { nombreCompleto, correo } };
+}
+
+/** El correo a donde mandar lo que escanee esta persona. Vacío = no se le ofrece. */
+export function normalizarCorreo(texto) {
+    return String(texto || '').replace(/[<>;"\r\n\t\s]/g, '').trim().toLowerCase().slice(0, config.CORREO_MAX);
+}
+
+export function correoValido(texto) {
+    const c = normalizarCorreo(texto);
+    return /^[^@]+@[^@.]+(\.[^@.]+)+$/.test(c);
 }
 
 /** Valida y crea SIN guardar: agregarUsuario guarda una vez; importarUsuarios, al final. */

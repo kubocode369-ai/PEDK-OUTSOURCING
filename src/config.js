@@ -27,6 +27,8 @@ export const config = {
 
     /** Nombre y apellidos de la persona, para saber quién es cada usuario. */
     NOMBRE_COMPLETO_MAX: 60,
+    /** Correo de la persona, para mandarle lo que escanea. */
+    CORREO_MAX: 60,
 
     /** Intentos fallidos seguidos antes de bloquear a ese usuario un rato. */
     INTENTOS_MAX: 5,

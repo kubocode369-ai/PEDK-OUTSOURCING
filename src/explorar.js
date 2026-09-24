@@ -270,6 +270,14 @@ export function probarDatos() {
 const INTERRUPTORES_ESCANEO = ['FUNC_T_PUSH_SCAN', 'FUNC_T_PULL_SCAN', 'FUNC_T_SCAN_TO_PC',
     'FUNC_T_SCAN_TO_USB', 'FUNC_T_SCAN_TO_UDISK', 'FUNC_T_SCAN_TO_EMAIL',
     'FUNC_T_SCAN_TO_SMB', 'FUNC_T_SCAN_TO_FTP'];
+/**
+ * El puerto de la memoria USB. Nuestra app NO lo toca nunca, pero si viene apagado
+ * (que es como vino este equipo) escanear a la memoria falla y el firmware cancela el
+ * trabajo SIN decir por qué: en el panel sale "El puerto del disco U está
+ * deshabilitado" y a la app no le llega nada. Por eso se leen aquí.
+ */
+const INTERRUPTORES_USB = ['FUNC_T_USB_ENABLE', 'FUNC_T_USB_PORT', 'FUNC_T_UDISK_FRONT_PORT',
+    'FUNC_T_UDISK_REAR_PORT', 'FUNC_T_UDISK_PRINT'];
 
 /** `getSystemCapabilitiesList` promete un Map; otros firmwares devuelven objeto llano. */
 function aPares(v) {
@@ -365,6 +373,104 @@ function espacioDeTrabajos(out, ns, nombreClase, arg, nombreParam) {
     }
 }
 
+/**
+ * A dónde deja escanear este equipo. Sólo se CONSTRUYE el trabajo (eso no escanea
+ * nada); lo que se busca es cuál de los destinos acepta el firmware, igual que con
+ * la copia se descubrió que `COPY_SCAN_SOURCE` lanza EOPNOTSUPP.
+ */
+function destinosEscaneo(out) {
+    const j = globalThis.pedk && pedk.jobs && pedk.jobs.scan;
+    if (!j || typeof j.ScanJob !== 'function') {
+        return;
+    }
+    const buenos = [];
+    const malos = [];
+    for (const d of ['SCAN_TO_UDISK', 'SCAN_TO_PC', 'SCAN_TO_EMAIL', 'SCAN_TO_SMB',
+        'SCAN_TO_FTP', 'SCAN_TO_APP', 'SCAN_TO_HTTP']) {
+        try {
+            const t = new j.ScanJob(j[d] || d);
+            (t ? buenos : malos).push(d.replace('SCAN_TO_', ''));
+        } catch (e) {
+            malos.push(d.replace('SCAN_TO_', '') + '(' + String((e && e.message) || e).slice(0, 12) + ')');
+            continue;
+        }
+    }
+    log('destinos de escaneo', 'valen: ' + buenos.join(',') + ' · no: ' + malos.join(','));
+    out.push('Escaneo a: ' + (buenos.join(',') || 'ninguno'));
+    if (malos.length) {
+        out.push('No admite: ' + malos.join(',').slice(0, 50));
+    }
+}
+
+/**
+ * Qué ajustes del escaneo acepta. Se prueba con un juego de parámetros de verdad
+ * (blanco y negro, 200 ppp, PDF, origen automático) sin lanzar ningún trabajo.
+ */
+function parametrosEscaneo(out) {
+    const j = globalThis.pedk && pedk.jobs && pedk.jobs.scan;
+    if (!j || typeof j.ScanParameterSet !== 'function') {
+        return;
+    }
+    let param = null;
+    try {
+        param = new j.ScanParameterSet();
+    } catch (e) {
+        out.push('ScanParameterSet: LANZÓ ' + String((e && e.message) || e).slice(0, 26));
+        return;
+    }
+    const buenos = [];
+    const malos = [];
+    for (const [nombreClave, nombreClase, valor] of [
+        ['SCAN_PARAM_COLORTYPE', 'ColorType', 1],
+        ['SCAN_PARAM_RESOLUTION', 'Resolution', 2],
+        ['SCAN_PARAM_FILEFMTTYPE', 'FileFmtType', 1],
+        ['SCAN_PARAM_MODE', 'ScanMode', 0],
+    ]) {
+        const corto = nombreClave.replace('SCAN_PARAM_', '');
+        if (typeof j[nombreClase] !== 'function') {
+            malos.push(corto + '(sin clase)');
+            continue;
+        }
+        try {
+            const r = param.addParameter(j[nombreClave] || nombreClave, new j[nombreClase](valor));
+            (r === false ? malos : buenos).push(corto);
+        } catch (e) {
+            malos.push(corto + '(' + String((e && e.message) || e).slice(0, 10) + ')');
+        }
+    }
+    log('parámetros de escaneo', 'valen: ' + buenos.join(',') + ' · no: ' + malos.join(','));
+    out.push('Escaneo admite: ' + (buenos.join(',') || 'nada').slice(0, 48));
+    if (malos.length) {
+        out.push('Escaneo no: ' + malos.join(',').slice(0, 50));
+    }
+}
+
+/**
+ * La libreta de direcciones del equipo: de ahí saldrían el correo o la carpeta
+ * compartida a los que mandar lo escaneado. Sólo se cuenta lo que hay.
+ */
+function libreta(out) {
+    const a = globalThis.pedk && pedk.addressbook;
+    if (!a) {
+        out.push('libreta: NO existe');
+        log('pedk.addressbook', 'no existe');
+        return;
+    }
+    log('pedk.addressbook', nombres(a).join(','));
+    const cuenta = (metodo) => {
+        if (typeof a[metodo] !== 'function') {
+            return 'no';
+        }
+        try {
+            return String(a[metodo]());
+        } catch (e) {
+            return 'lanzó';
+        }
+    };
+    out.push('libreta: correo ' + cuenta('getEmailAddrNum') + ' · smb ' + cuenta('getSMBAddrNum')
+        + ' · ftp ' + cuenta('getFTPAddrNum'));
+}
+
 /** Cuotas por persona hechas por el firmware. Sólo se LEE. */
 function cuotas(out) {
     const q = globalThis.pedk && pedk.quota;
@@ -391,9 +497,9 @@ function cuotas(out) {
     out.push('cuota local: ' + (claves.length ? claves.join(',').slice(0, 46) : String(d).slice(0, 46)));
 }
 
-/** Los interruptores del escaneo, como ya se leen los de copia. */
+/** Los interruptores del escaneo y los del puerto USB, como ya se leen los de copia. */
 function interruptoresEscaneo(out) {
-    for (const n of INTERRUPTORES_ESCANEO) {
+    for (const n of INTERRUPTORES_ESCANEO.concat(INTERRUPTORES_USB)) {
         const linea = n.replace('FUNC_T_', '') + ': ' + cerradura.leerCrudo(n)
             + (cerradura.exportado(n) ? '' : ' (no exportado)');
         log('interruptor', linea);
@@ -410,6 +516,9 @@ export function medirTrabajos() {
     capacidades(out);
     espacioDeTrabajos(out, 'copy', 'CopyJob', 'COPY_NORMAL', 'CopyParameterSet');
     espacioDeTrabajos(out, 'scan', 'ScanJob', 'SCAN_TO_USB', 'ScanParameterSet');
+    destinosEscaneo(out);
+    parametrosEscaneo(out);
+    libreta(out);
     cuotas(out);
     interruptoresEscaneo(out);
     out.push('Detalle en el log: [explorar]');

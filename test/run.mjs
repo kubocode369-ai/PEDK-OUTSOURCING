@@ -542,6 +542,7 @@ hablar(); console.log('· Medición: copia, escaneo y cuotas desde la app'); sil
         && sin.some((l) => /quota: NO existe/.test(l)), sin.join(' | '));
     check('y también si no hay capacidades', sin.some((l) => /capabilities: NO existe/.test(l)), sin.join(' | '));
     check('los interruptores de escaneo se leen igual', sin.some((l) => /^PUSH_SCAN: /.test(l)), sin.join(' | '));
+    check('y sin libreta de direcciones lo dice', sin.some((l) => /^libreta: NO existe/.test(l)), sin.join(' | '));
     silenciar();
 
     // Un equipo que SÍ lo trae (lo que esperamos encontrar, o no).
@@ -560,6 +561,10 @@ hablar(); console.log('· Medición: copia, escaneo y cuotas desde la app'); sil
         con.some((l) => /new CopyJob\(COPY_NORMAL\): funciona/.test(l))
         && con.some((l) => /new ScanJob\(SCAN_TO_USB\): funciona/.test(l)), con.join(' | '));
     check('lee la cuota local del equipo', con.some((l) => /cuota local: quota_switch/.test(l)), con.join(' | '));
+    check('dice a dónde se puede escanear', con.some((l) => /^Escaneo a: .*UDISK/.test(l)), con.join(' | '));
+    check('y qué ajustes del escaneo admite', con.some((l) => /^Escaneo admite: .*COLORTYPE/.test(l)), con.join(' | '));
+    check('y cuántas direcciones hay en la libreta',
+        con.some((l) => /^libreta: correo 2 · smb 1/.test(l)), con.join(' | '));
     check('y ve el interruptor del escaneo del panel', con.some((l) => /^PUSH_SCAN: FUNC_SW_ON$/.test(l)), con.join(' | '));
     check('el detalle va al log [explorar]',
         consola.slice(inicioMedir).some((l) => /^\[explorar\] pedk\.jobs\.copy: /.test(l)));
@@ -1383,7 +1388,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('un fichero que no es JSON se rechaza sin enviar nada', nav4.posts.length === 0 && /no es una copia/.test(nav4.estado.textContent));
     const nav5 = navegador(sN, { name: 'x.json', text: () => Promise.resolve('{"app":"otra","usuarios":[]}') });
     nav5.correr('subirCopia(' + nav5.boton + ')');
-    await esperar(50);
+    await esperar(150);   // 50 ms se quedaba corto de vez en cuando: la prueba daba falsos fallos
     check('una copia de otra app se rechaza', nav5.estado.className === 'error' && /otra app/.test(nav5.estado.textContent), nav5.estado.textContent);
     const vieja = JSON.stringify({ formato: 1, app: 'impresion-pin-BM5220ADW', usuarios: [{ nombre: 'vieja', huella: store.huella('vieja', '5555'), activo: true }] });
     const nav6 = navegador(sN, { name: 'ultimo.json', text: () => Promise.resolve(vieja) });
@@ -1732,6 +1737,146 @@ hablar(); console.log('· Copiar desde la app'); silenciar();
     hablar();
     check('si el equipo está ocupado lo dice y deja reintentar', /ocupado/.test(mock.textos())
         && /COPIAR/.test(mock.textos()), mock.textos());
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
+hablar(); console.log('· Escanear desde la app'); silenciar();
+{
+    const escaneo = await import('./.build/escaneo.mjs');
+
+    equipo();
+    hablar();
+    check('sin pedk.jobs.scan no se ofrece escanear', escaneo.disponible() === false);
+    silenciar();
+
+    equipo({ trabajos: true });
+    store.agregarUsuario('ana', '1234', { nombreCompleto: 'Ana Ruiz' });
+    store.agregarUsuario('beto', '1234', { nombreCompleto: 'Beto Gil', correo: 'beto@empresa.com' });
+    hablar();
+    check('el correo de la ficha se guarda validado', store.usuario('beto').correo === 'beto@empresa.com'
+        && store.cambiarDatosUsuario('ana', { correo: 'esto no es un correo' }).ok === false,
+        JSON.stringify(store.usuario('beto')));
+    check('quien no tiene correo ni carpeta sólo ve la memoria USB',
+        escaneo.destinosDe('ana').map((x) => x.id).join() === 'usb', JSON.stringify(escaneo.destinosDe('ana')));
+    check('quien tiene correo ve su correo', escaneo.destinosDe('beto').map((x) => x.id).join() === 'usb,correo');
+    silenciar();
+
+    // Escanear a la memoria USB.
+    escaneo.abrirEscaneo('ana', () => {});
+    hablar();
+    check('la pantalla trae destino, formato y el botón', /Memoria USB/.test(mock.textos())
+        && /PDF/.test(mock.textos()) && /ESCANEAR/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('escanear');
+    const e1 = mock.arrancados[mock.arrancados.length - 1];
+    hablar();
+    check('arranca el escaneo a USB en PDF', !!e1 && e1.tipo === 'SCAN_TO_USB'
+        && e1.param.SCAN_PARAM_FILEFMTTYPE === 1, JSON.stringify(e1));
+    check('y la pantalla lo dice', /Escaneando/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+    hablar();
+    check('al acabar dice a dónde fue', /Listo: memoria usb/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    // A su correo: el destino viaja DENTRO del trabajo, no en la libreta del equipo.
+    escaneo.abrirEscaneo('beto', () => {});
+    mock.pulsar('destino');
+    mock.pulsar('formato');
+    mock.pulsar('escanear');
+    const e2 = mock.arrancados[mock.arrancados.length - 1];
+    const lib = mock.libretas[mock.libretas.length - 1];
+    hablar();
+    check('escanea al correo de la persona en JPEG', !!e2 && e2.tipo === 'SCAN_TO_EMAIL'
+        && e2.param.SCAN_PARAM_FILEFMTTYPE === 0 && lib.correos.join() === 'beto@empresa.com',
+        JSON.stringify(e2) + ' · ' + JSON.stringify(lib.correos));
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+
+    // A la carpeta compartida: cada persona en su subcarpeta, sin dar de alta a nadie.
+    (await import('./.build/acciones.mjs')).fijarCarpetaEscaneo({
+        servidor: '192.168.0.50', ruta: '/escaneos/', usuario: 'escaner', clave: 'x1', puerto: '445',
+    });
+    hablar();
+    check('la carpeta se guarda normalizada', JSON.stringify(store.carpetaEscaneo())
+        === JSON.stringify({ servidor: '192.168.0.50', ruta: '/escaneos/', usuario: 'escaner', clave: 'x1', puerto: 445 }),
+        JSON.stringify(store.carpetaEscaneo()));
+    check('y ahora todos ven "Mi carpeta"', escaneo.destinosDe('ana').map((x) => x.id).join() === 'usb,carpeta');
+    silenciar();
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('destino');
+    mock.pulsar('escanear');
+    const e3 = mock.arrancados[mock.arrancados.length - 1];
+    const lib3 = mock.libretas[mock.libretas.length - 1];
+    hablar();
+    check('escanea a la subcarpeta de esa persona', !!e3 && e3.tipo === 'SCAN_TO_SMB'
+        && lib3.smb[0].host === '192.168.0.50' && lib3.smb[0].ruta === '/escaneos/ana'
+        && lib3.smb[0].login === 'escaner' && lib3.smb[0].puerto === 445, JSON.stringify(lib3.smb));
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+
+    // Sin servidor no hay carpeta: media configuración es peor que ninguna.
+    (await import('./.build/acciones.mjs')).fijarCarpetaEscaneo({ ruta: '/x', usuario: 'y' });
+    hablar();
+    check('una carpeta sin servidor no se guarda', store.carpetaEscaneo() === null);
+    silenciar();
+
+    // Varias páginas desde el cristal: el equipo se queda esperando y hay que
+    // contestarle. Sin esto el trabajo se quedaba abierto para siempre (medido: 62 s).
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('escanear');
+    mock.copiaAvisa('JBSts_Running');
+    hablar();
+    check('mientras escanea ofrece otra página o terminar', /Otra página/.test(mock.textos())
+        && /TERMINAR/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('otra');
+    hablar();
+    check('"Otra página" se lo pide al equipo', mock.seguidos.join() === 'continue', mock.seguidos.join());
+    silenciar();
+    mock.pulsar('terminar');
+    mock.copiaAvisa('JBSts_Finish');
+    hablar();
+    check('TERMINAR cierra el trabajo y avisa de dónde quedó',
+        mock.seguidos.join() === 'continue,finish' && /Listo: memoria usb/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    // Mientras el equipo guarda no debe haber botones que invitar a pulsar dos veces:
+    // el 25-09-2026 `finish()` tardó ~50 s y la persona lo pulsó tres veces.
+    mock.pulsar('escanear');
+    mock.copiaAvisa('JBSts_Running');
+    const antesSeguidos = mock.seguidos.length;
+    mock.pulsar('terminar');
+    hablar();
+    check('mientras guarda no ofrece TERMINAR otra vez', !/TERMINAR/.test(mock.textos())
+        && /Guardando el documento/.test(mock.textos()), mock.textos());
+    check('y no se le pide dos veces al equipo', mock.seguidos.length === antesSeguidos + 1,
+        mock.seguidos.slice(antesSeguidos).join());
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+
+    // Si el equipo cancela solo (sin que nadie pulse Cancelar) no se dice "cancelado":
+    // pasó de verdad el 25-09-2026 y el mensaje despistaba.
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('escanear');
+    mock.copiaAvisa('JBSts_Cancelling');
+    hablar();
+    check('si lo para el equipo, se dice que fue el equipo', /El equipo paró/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('escanear');
+    mock.pulsar('cancelar');
+    hablar();
+    check('y si lo para la persona, se dice cancelado', /Escaneo cancelado/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    // Escáner ocupado.
+    equipo({ trabajos: true, copiaDevuelve: 4 });
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('escanear');
+    hablar();
+    check('si el escáner está ocupado lo dice y deja reintentar', /ocupado/.test(mock.textos())
+        && /ESCANEAR/.test(mock.textos()), mock.textos());
     silenciar();
 }
 
