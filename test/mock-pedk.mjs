@@ -310,23 +310,52 @@ export function makePedk(opts = {}) {
      * para que ninguna prueba se acostumbre a lanzar trabajos en el simulador.
      */
     let trabajos = null;
-    /** Trabajos de copia/escaneo que alguien intentó arrancar: tiene que quedar vacío. */
+    /** Trabajos de copia/escaneo que alguien arrancó: [{tipo, no, param, cuota}]. */
     const arrancados = [];
+    /** El último trabajo arrancado, para avisar de sus cambios de estado. */
+    let ultimo = null;
     if (opts.trabajos) {
         class Trabajo {
-            constructor(tipo) { this.tipo = tipo; this.estado = 'JBSts_Init'; }
+            constructor(tipo) { this.tipo = tipo; this.estado = 'JBSts_Init'; this.oyentes = []; }
             getJobType() { return this.tipo; }
             getJobState() { return this.estado; }
             getJobId() { return 1; }
-            addListener() { return true; }
-            removeListener() { return true; }
-            start() { arrancados.push(this.tipo); throw new Error('aqui no se arrancan trabajos'); }
-            cancel() { return true; }
+            addListener(l) { this.oyentes.push(l); return true; }
+            removeListener(l) { this.oyentes = this.oyentes.filter((x) => x !== l); return true; }
+            /**
+             * Arrancar sólo ANOTA: aquí no sale papel. Lo que devuelve se puede elegir
+             * con `equipo({ copiaDevuelve: 4 })` para probar el equipo ocupado.
+             */
+            start(no, param, cuota) {
+                arrancados.push({ tipo: this.tipo, no, param: param && param.puestos, cuota });
+                ultimo = this;
+                return opts.copiaDevuelve === undefined ? 0 : opts.copiaDevuelve;
+            }
+            cancel() { this.avisar('JBSts_Cancelling'); return true; }
+            /** El equipo avisa del cambio de estado, como hace el firmware de verdad. */
+            avisar(e) {
+                this.estado = e;
+                this.oyentes.slice().forEach((o) => { if (o && typeof o.notify === 'function') o.notify(e); });
+            }
         }
-        class Parametros { addParameter() { return true; } }
+        /** Guarda lo que se le pide, para que las pruebas vean qué parámetros se mandaron. */
+        class Parametros {
+            constructor() { this.puestos = {}; }
+            addParameter(k, v) {
+                // La BM5220ADW lanza EOPNOTSUPP con COPY_SCAN_SOURCE (medido 25-09-2026):
+                // con `equipo({ sinOrigenCopia: true })` se imita ese firmware.
+                if (opts.sinOrigenCopia && String(k) === 'COPY_SCAN_SOURCE') throw new TypeError('EOPNOTSUPP');
+                this.puestos[String(k)] = v && v.valor !== undefined ? v.valor : v;
+                return true;
+            }
+        }
+        /** Las clases de valor del SDK: guardan el número o el texto que se les pasa. */
+        const Valor = (nombre) => ({ [nombre]: class { constructor(v) { this.valor = v; } } })[nombre];
         trabajos = {
-            copy: { CopyJob: class CopyJob extends Trabajo {}, CopyParameterSet: Parametros, Copies: class Copies {}, JobStateListener: class JobStateListener {} },
-            scan: { ScanJob: class ScanJob extends Trabajo {}, ScanParameterSet: Parametros, Resolution: class Resolution {}, JobStateListener: class JobStateListener {} },
+            copy: { CopyJob: class CopyJob extends Trabajo {}, CopyParameterSet: Parametros,
+                Copies: Valor('Copies'), CopyMode: Valor('CopyMode'), CopyScanSource: Valor('CopyScanSource'),
+                JobStateListener: class JobStateListener {} },
+            scan: { ScanJob: class ScanJob extends Trabajo {}, ScanParameterSet: Parametros, Resolution: Valor('Resolution'), JobStateListener: class JobStateListener {} },
             quota: {
                 QuotaParam: class QuotaParam {},
                 getLocalQuotaData: () => ({ quota_switch: false, quota_mode: 'QUOTA_MODE_PAGE', user_quota: '0' }),
@@ -358,6 +387,8 @@ export function makePedk(opts = {}) {
         pedk,
         switches,
         arrancados,
+        /** El equipo avisa de un cambio de estado del último trabajo (JBSts_Running…). */
+        copiaAvisa: (estado) => { if (ultimo) ultimo.avisar(estado); },
         liberados,
         cancelados,
         llegaTrabajo,

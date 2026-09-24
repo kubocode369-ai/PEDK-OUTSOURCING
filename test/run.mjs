@@ -1642,6 +1642,99 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('sin Response en el firmware no se engancha y lo dice', !web.instalar().ok);
 }
 
+/* ------------------------------------------------------------------ */
+hablar(); console.log('· Copiar desde la app'); silenciar();
+{
+    const copia = await import('./.build/copia.mjs');
+
+    equipo();
+    hablar();
+    check('sin pedk.jobs.copy no se ofrece copiar', copia.disponible() === false);
+    silenciar();
+
+    equipo({ trabajos: true });
+    let volvio = 0;
+    hablar();
+    check('con pedk.jobs.copy sí se ofrece', copia.disponible() === true);
+    silenciar();
+    copia.abrirCopia(() => { volvio++; });
+    hablar();
+    check('la pantalla trae copias, origen y el botón', /Copias/.test(mock.textos())
+        && /Automático/.test(mock.textos()) && /COPIAR/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    mock.pulsar('mas');
+    mock.pulsar('mas');
+    mock.pulsar('origen');
+    hablar();
+    check('se eligen las copias y el origen', / 3 /.test(' ' + mock.textos() + ' ')
+        && /Platina/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    mock.pulsar('copiar');
+    const t = mock.arrancados[mock.arrancados.length - 1];
+    hablar();
+    check('arranca el trabajo con lo que se eligió', !!t && t.tipo === 'COPY_NORMAL'
+        && t.param.COPY_PARAM_COPIES === 3 && t.param.COPY_SCAN_SOURCE === 3, JSON.stringify(t));
+    check('la cuota va como objeto (el firmware exige typeof object)', !!t && t.cuota === null);
+    check('y la pantalla pasa a Copiando con Cancelar', /Copiando/.test(mock.textos())
+        && /Cancelar/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    mock.copiaAvisa('JBSts_Running');
+    mock.copiaAvisa('JBSts_Finish');
+    hablar();
+    check('al acabar lo dice y vuelve a dejar copiar', /Copia hecha/.test(mock.textos())
+        && /COPIAR/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    mock.pulsar('copiar');
+    mock.pulsar('cancelar');
+    hablar();
+    check('Cancelar se lo pide al equipo y lo cuenta', /cancelada/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    // Volver no cancela: la copia sigue sola y el historial la contará igual.
+    mock.pulsar('copiar');
+    mock.pulsar('volver');
+    hablar();
+    check('Volver sale de la pantalla sin cancelar', volvio === 1, String(volvio));
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+
+    // La impresora es de todos: al volver a abrir no se heredan las copias del anterior.
+    mock.pulsar('mas');
+    copia.abrirCopia(() => {});
+    hablar();
+    check('al abrir de nuevo vuelve a 1 copia', / 1 /.test(' ' + mock.textos() + ' ')
+        && !/ 2 /.test(' ' + mock.textos() + ' '), mock.textos());
+    silenciar();
+
+    // El equipo de verdad NO deja elegir el origen: no se enseña un botón que miente.
+    equipo({ trabajos: true, sinOrigenCopia: true });
+    copia.abrirCopia(() => {});
+    hablar();
+    check('sin soporte de origen, no sale el botón y se explica', !/Platina|Automático/.test(mock.textos())
+        && /alimentador si hay hojas/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('copiar');
+    const t2 = mock.arrancados[mock.arrancados.length - 1];
+    hablar();
+    check('y el trabajo sale igual, sin ese parámetro', !!t2 && t2.param.COPY_PARAM_COPIES === 1
+        && t2.param.COPY_SCAN_SOURCE === undefined, JSON.stringify(t2));
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+
+    // Equipo ocupado (start devuelve 4): se dice y no se queda colgada en Copiando.
+    equipo({ trabajos: true, copiaDevuelve: 4 });
+    copia.abrirCopia(() => {});
+    mock.pulsar('copiar');
+    hablar();
+    check('si el equipo está ocupado lo dice y deja reintentar', /ocupado/.test(mock.textos())
+        && /COPIAR/.test(mock.textos()), mock.textos());
+    silenciar();
+}
+
 hablar();
 console.log('\n' + ok + ' bien, ' + fallos + ' mal\n');
 if (fallos > 0) {

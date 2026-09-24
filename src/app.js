@@ -30,6 +30,7 @@ import * as diagnostico from './diagnostico.js';
 import * as vigia from './vigia.js';
 import * as web from './web.js';
 import * as acciones from './acciones.js';
+import * as copia from './copia.js';
 import { abrirAjustes } from './ajustes.js';
 
 const { ScreenCtrl, KeyCtrl } = pedk.ui;
@@ -311,15 +312,28 @@ function renderSesion() {
     w.push(etiqueta('l3', 12, 116, 456, 20, 'En esta sesión:', COLOR.suave));
     w.push(etiqueta('cuenta', 12, 138, 456, 24, recortar(textoCuenta(), 60), COLOR.texto));
     w.push(etiqueta('tiempo', 12, 176, 456, 20, 'Se cierra sola en ' + textoRestante() + ' sin actividad', COLOR.tenue));
-    w.push(boton('mas', 12, 206, 200, 36, 'Más tiempo', COLOR.acento, () => {
+    w.push(boton('mas', 12, 206, 140, 36, 'Más tiempo', COLOR.acento, () => {
         sesion.actividad();
         repintar();
     }));
-    w.push(boton('menuEquipo', 244, 206, 224, 36, a.bloquearCopia ? 'Ir a copiar' : 'Menú del equipo',
-        COLOR.acento, () => {
+    // Copiar sin salir de la app, si este firmware deja. Si no, queda el camino de
+    // siempre: irse al menú del equipo.
+    if (copia.disponible()) {
+        w.push(boton('copiar', 160, 206, 140, 36, 'Copiar', COLOR.acento, () => {
+            sesion.actividad();
+            copia.abrirCopia(() => mostrar('sesion', renderSesion));
+        }));
+        w.push(boton('menuEquipo', 308, 206, 160, 36, 'Menú del equipo', COLOR.acento, () => {
             sesion.actividad();
             salirAlMenu();
         }));
+    } else {
+        w.push(boton('menuEquipo', 160, 206, 308, 36, a.bloquearCopia ? 'Ir a copiar' : 'Menú del equipo',
+            COLOR.acento, () => {
+                sesion.actividad();
+                salirAlMenu();
+            }));
+    }
     w.push(etiqueta('msg', 12, 256, 456, 40, recortar(mensaje, 62), colorMensaje));
     return w;
 }
@@ -349,21 +363,29 @@ function renderRetenidos() {
         y += 44;
     }
     w.push(...paginador('pg', 12, 222, info, () => { pagina--; repintar(); }, () => { pagina++; repintar(); }));
-    w.push(boton('actualizar', 12, 256, 140, 30, 'Actualizar', COLOR.acento, () => {
+    w.push(boton('actualizar', 12, 256, 110, 30, 'Actualizar', COLOR.acento, () => {
         sesion.actividad();
         cargarRetenidos();
         repintar();
     }));
+    if (copia.disponible()) {
+        w.push(boton('copiar', 128, 256, 92, 30, 'Copiar', COLOR.acento, () => {
+            sesion.actividad();
+            copia.abrirCopia(() => mostrar('retenidos', renderRetenidos));
+        }));
+    }
     // Como en el modo sesión: con "Copia: con PIN" la copia sólo se abre al entrar, y sin
     // este botón no había forma de llegar a ella desde aquí. La sesión sigue abierta
     // mientras copia (cada copia contada la alarga) y al terminar la copia se cierra.
-    w.push(boton('menuEquipo', 158, 256, 150, 30, store.ajustes().bloquearCopia ? 'Ir a copiar' : 'Menú del equipo',
+    const xMenu = copia.disponible() ? 226 : 158;
+    w.push(boton('menuEquipo', xMenu, 256, 150, 30,
+        !copia.disponible() && store.ajustes().bloquearCopia ? 'Ir a copiar' : 'Menú del equipo',
         COLOR.acento, () => {
             sesion.actividad();
             salirAlMenu();
         }));
-    w.push(etiqueta('cuenta', 316, 262, 152, 20, recortar(textoCuenta(), 20), COLOR.suave));
-    w.push(etiqueta('msg', 12, 292, 456, 22, recortar(mensaje || 'Se cierra sola en ' + textoRestante(), 62),
+    w.push(etiqueta('cuenta', 320, 292, 148, 20, recortar(textoCuenta(), 20), COLOR.suave));
+    w.push(etiqueta('msg', 12, 292, 300, 22, recortar(mensaje || 'Se cierra sola en ' + textoRestante(), 40),
         mensaje ? colorMensaje : COLOR.tenue));
     return w;
 }
