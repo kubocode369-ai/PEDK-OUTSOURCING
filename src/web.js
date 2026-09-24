@@ -542,7 +542,8 @@ function paginaAjustes(token, msg) {
             botonA('modo', a.modo === 'retencion' ? 'Pasar a sesión' : 'Pasar a retención'))
         + fila('Bloqueo', a.bloqueoActivo ? 'ENCENDIDO' : 'apagado', a.bloqueoActivo
             ? botonA('bloqueo', 'Apagar', 'x', '¿Apagar? Imprimirá cualquiera.') : botonA('bloqueo', 'Encender', 'p'))
-        + fila('Copia', a.bloquearCopia ? 'con PIN' : 'libre', botonA('copia', a.bloquearCopia ? 'Dejar libre' : 'Pedir PIN'))
+        + fila('Copia', a.bloquearCopia ? 'con PIN' : 'libre', botonA('copia', a.bloquearCopia ? 'Libre' : 'Con PIN'))
+        + fila('Escaneo', a.bloquearEscaneo ? 'con PIN' : 'libre', botonA('escaneo', a.bloquearEscaneo ? 'Libre' : 'Con PIN'))
         + fila('Sesión', '<select name="minutos">' + minutos + '</select> min', botonA('minutos', 'Guardar'))
         // En retención la impresión desde PC está siempre abierta (la vigila el guardián):
         // sólo informa en modo sesión.
@@ -550,7 +551,7 @@ function paginaAjustes(token, msg) {
         + botonA('desbloquear', 'Desbloquear equipo', 'x', '¿Desbloquear todo?') + '</p>'))
         // Un formulario GET con un botón por destino: el token va una vez, no cuatro.
         + panel('Mantenimiento', '<form><input type="hidden" name="s" value="' + token + '">'
-            + [['copia', 'Copia de seguridad'], ['pinadmin', 'PIN de administrador']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
+            + [['copia', 'Copia de seguridad'], ['pinadmin', 'PIN admin']].map((x) => '<button formaction="' + x[0] + '">' + x[1] + '</button>').join('')
             + '</form>'));
 }
 
@@ -570,6 +571,7 @@ function hacerAjuste(d) {
         case 'modo': return acciones.fijarModo(a.modo === 'retencion' ? 'sesion' : 'retencion');
         case 'bloqueo': return acciones.fijarBloqueo(!a.bloqueoActivo);
         case 'copia': return acciones.fijarBloqueoCopia(!a.bloquearCopia);
+        case 'escaneo': return acciones.fijarBloqueoEscaneo(!a.bloquearEscaneo);
         case 'minutos': return acciones.fijarMinutosSesion(d.minutos);
         case 'desbloquear': return acciones.desbloquearTodo();
         default: return { ok: false, texto: 'Acción desconocida.' };

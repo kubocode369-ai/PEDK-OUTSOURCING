@@ -43,7 +43,7 @@ function duracionMs() {
  */
 function queBloquear() {
     const a = store.ajustes();
-    return { impresion: a.modo !== 'retencion', copia: a.bloquearCopia };
+    return { impresion: a.modo !== 'retencion', copia: a.bloquearCopia, escaneo: a.bloquearEscaneo };
 }
 
 /**
@@ -57,9 +57,9 @@ export function abrir(nombre, pinTexto, ahora) {
     const a = store.ajustes();
     if (a.bloqueoActivo) {
         const que = a.modo === 'sesion'
-            ? { impresion: true, copia: a.bloquearCopia }
-            : { impresion: false, copia: a.bloquearCopia };
-        if (que.impresion || que.copia) {
+            ? { impresion: true, copia: a.bloquearCopia, escaneo: a.bloquearEscaneo }
+            : { impresion: false, copia: a.bloquearCopia, escaneo: a.bloquearEscaneo };
+        if (que.impresion || que.copia || que.escaneo) {
             const r = cerradura.abrir(que);
             if (!r.ok) {
                 cerradura.cerrar(queBloquear());
@@ -103,8 +103,8 @@ export function reposo() {
          * así que el PC no podía mandar nada más: los documentos nuevos no llegaban a
          * la impresora y la lista salía vacía. El bloqueo tiene que ser declarativo.
          */
-        const reabrir = { impresion: !que.impresion, copia: !que.copia };
-        if (reabrir.impresion || reabrir.copia) {
+        const reabrir = { impresion: !que.impresion, copia: !que.copia, escaneo: !que.escaneo };
+        if (reabrir.impresion || reabrir.copia || reabrir.escaneo) {
             cerradura.abrir(reabrir);
         }
         const r = cerradura.cerrar(que);

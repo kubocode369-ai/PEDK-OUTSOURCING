@@ -301,6 +301,33 @@ hablar(); console.log('· Cerradura'); silenciar();
     hablar();
     check('firmware sin NET_PRINT: no se da por bloqueado', r4.ok === false && cerradura.impresionBloqueada() === null);
     silenciar();
+
+    // Escaneo (los interruptores existen en el equipo de verdad, medido 24-09-2026).
+    equipo({
+        exportados: ['FUNC_T_NET_PRINT', 'FUNC_T_USBPORT_PRINT', 'FUNC_T_COPY', 'FUNC_T_IDCOPY',
+            'FUNC_T_BILL', 'FUNC_T_PUSH_SCAN', 'FUNC_T_PULL_SCAN', 'FUNC_T_SCAN_TO_PC'],
+    });
+    const r5 = cerradura.cerrar({ impresion: false, copia: false, escaneo: true });
+    hablar();
+    check('bloquear el escaneo apaga panel, PC y destino', r5.ok
+        && mock.switches.FUNC_T_PUSH_SCAN === 'FUNC_SW_OFF'
+        && mock.switches.FUNC_T_PULL_SCAN === 'FUNC_SW_OFF'
+        && mock.switches.FUNC_T_SCAN_TO_PC === 'FUNC_SW_OFF', JSON.stringify(mock.switches));
+    check('y no toca la impresión ni la copia', mock.switches.FUNC_T_NET_PRINT === 'FUNC_SW_ON'
+        && mock.switches.FUNC_T_COPY === 'FUNC_SW_ON');
+    silenciar();
+    cerradura.abrir();
+    hablar();
+    check('desbloquear vuelve a encender el escaneo', mock.switches.FUNC_T_PUSH_SCAN === 'FUNC_SW_ON');
+    silenciar();
+
+    // Un firmware SIN esos interruptores: ni se tocan, ni impiden bloquear el resto.
+    equipo();
+    const r6 = cerradura.cerrar({ impresion: true, escaneo: true });
+    hablar();
+    check('sin interruptores de escaneo, el bloqueo sigue valiendo', r6.ok === true, r6.resumen);
+    check('y no se inventa ninguno', !('FUNC_T_PUSH_SCAN' in mock.switches));
+    silenciar();
 }
 
 /* ------------------------------------------------------------------ */
@@ -471,6 +498,46 @@ hablar(); console.log('· Retención'); silenciar();
     check('explorar lee la fuente de EncryptJobPrint', volcado.some((l) => /EncryptJobPrint\.fuente( 1\/\d+)?: class/.test(l)), volcado.slice(0, 5).join('\n'));
     check('y anota por qué falla el constructor', resumen.some((l) => /EXIT_FAILURE/.test(l)), resumen.join(' | '));
     check('trocea las líneas largas del log', volcado.every((l) => l.length < 900));
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
+hablar(); console.log('· Medición: copia, escaneo y cuotas desde la app'); silenciar();
+{
+    const explorar = await import('./.build/explorar.mjs');
+
+    // El equipo tal como lo conocemos HOY: no se sabe si trae nada de esto, y la
+    // medición tiene que decirlo en vez de romperse.
+    equipo();
+    hablar();
+    const sin = explorar.medirTrabajos();
+    check('sin soporte lo dice, no se rompe', sin.some((l) => /jobs\.copy: NO existe/.test(l))
+        && sin.some((l) => /jobs\.scan: NO existe/.test(l))
+        && sin.some((l) => /quota: NO existe/.test(l)), sin.join(' | '));
+    check('y también si no hay capacidades', sin.some((l) => /capabilities: NO existe/.test(l)), sin.join(' | '));
+    check('los interruptores de escaneo se leen igual', sin.some((l) => /^PUSH_SCAN: /.test(l)), sin.join(' | '));
+    silenciar();
+
+    // Un equipo que SÍ lo trae (lo que esperamos encontrar, o no).
+    equipo({
+        trabajos: true,
+        exportados: ['FUNC_T_NET_PRINT', 'FUNC_T_USBPORT_PRINT', 'FUNC_T_COPY', 'FUNC_T_IDCOPY',
+            'FUNC_T_BILL', 'FUNC_T_SECURE_PRINT', 'FUNC_T_PUSH_SCAN', 'FUNC_T_PULL_SCAN'],
+    });
+    const inicioMedir = consola.length;
+    const con = explorar.medirTrabajos();
+    hablar();
+    check('resume lo que el equipo dice saber hacer',
+        con.some((l) => /Escaneo: true · tipo ADF/.test(l))
+        && con.some((l) => /Copia: true .*máx copias 99/.test(l)), con.join(' | '));
+    check('construye copia y escaneo SIN arrancarlos',
+        con.some((l) => /new CopyJob\(COPY_NORMAL\): funciona/.test(l))
+        && con.some((l) => /new ScanJob\(SCAN_TO_USB\): funciona/.test(l)), con.join(' | '));
+    check('lee la cuota local del equipo', con.some((l) => /cuota local: quota_switch/.test(l)), con.join(' | '));
+    check('y ve el interruptor del escaneo del panel', con.some((l) => /^PUSH_SCAN: FUNC_SW_ON$/.test(l)), con.join(' | '));
+    check('el detalle va al log [explorar]',
+        consola.slice(inicioMedir).some((l) => /^\[explorar\] pedk\.jobs\.copy: /.test(l)));
+    check('y no arranca ningún trabajo de verdad', mock.arrancados.length === 0, mock.arrancados.join());
     silenciar();
 }
 
@@ -742,6 +809,10 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     check('Explorar SDK resume en el panel', /Globales: \d+/.test(mock.textos()) && /EncryptJobPrint: undefined/.test(mock.textos()), mock.textos());
     check('y vuelca el detalle al log', consola.slice(antesExplorar).some((l) => /^\[explorar\] pedk: /.test(l)));
     silenciar();
+    mock.pulsar('medir');
+    hablar();
+    check('Copia/Esc mide desde el panel', /jobs\.copy: NO existe/.test(mock.textos()), mock.textos());
+    silenciar();
     mock.pulsar('volver');
     mock.pulsar('abrir');
     hablar();
@@ -886,7 +957,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
             contadores[nombre] = { impresiones: 120 + i, paginas: 1500 + i, copias: 30, paginasCopia: 400 };
         }
         return { formato: 1, app: config.WEB_APP, usuarios, contadores, registro: [],
-            ajustes: { modo: 'retencion', bloqueoActivo: true, bloquearCopia: true, minutosSesion: 3, huellaAdmin: null } };
+            ajustes: { modo: 'retencion', bloqueoActivo: true, bloquearCopia: true, bloquearEscaneo: true, minutosSesion: 3, huellaAdmin: null } };
     };
     let listaJs = null;   // se lee una vez: una prueba baja el tope y el script ya no cabría
     const verLista = async (tok) => {
@@ -1266,6 +1337,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     check('vuelven los contadores y el registro', JSON.stringify(despues.contadores) === JSON.stringify(antes.contadores)
         && despues.registro.length === antes.registro.length);
     check('vuelven los ajustes y el PIN de administrador', despues.ajustes.bloquearCopia === true
+        && despues.ajustes.bloquearEscaneo === antes.ajustes.bloquearEscaneo
         && despues.ajustes.huellaAdmin === antes.ajustes.huellaAdmin);
     check('modo y bloqueo se aplican de verdad, como en el panel',
         store.ajustes().modo === 'retencion' && store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === false);

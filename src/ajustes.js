@@ -89,8 +89,11 @@ function renderMenu() {
         COLOR.acento, alternarModo));
 
     w.push(boton('minutos', col(0), fila(3), W, H, 'Sesión: ' + a.minutosSesion + ' min', COLOR.acento, siguienteDuracion));
-    w.push(boton('copia', col(1), fila(3), W, H, a.bloquearCopia ? 'Copia: con PIN' : 'Copia: libre',
+    // Copia y escaneo comparten la fila: media anchura cada uno.
+    w.push(boton('copia', col(1), fila(3), 110, H, a.bloquearCopia ? 'Copia: PIN' : 'Copia: libre',
         COLOR.acento, alternarCopia));
+    w.push(boton('escaneo', col(1) + 114, fila(3), 110, H, a.bloquearEscaneo ? 'Escán: PIN' : 'Escán: libre',
+        COLOR.acento, alternarEscaneo));
 
     w.push(boton('pinadmin', col(0), fila(4), W, H, 'Cambiar PIN admin', COLOR.acento, () => pedirPin({
         titulo: 'Nuevo PIN de administrador',
@@ -132,6 +135,10 @@ function siguienteDuracion() {
 
 function alternarCopia() {
     contar(acciones.fijarBloqueoCopia(!store.ajustes().bloquearCopia));
+}
+
+function alternarEscaneo() {
+    contar(acciones.fijarBloqueoEscaneo(!store.ajustes().bloquearEscaneo));
 }
 
 function desbloquearTodo() {

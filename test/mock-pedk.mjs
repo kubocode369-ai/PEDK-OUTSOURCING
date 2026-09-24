@@ -300,18 +300,64 @@ export function makePedk(opts = {}) {
         print.EncryptJobPrint = EncryptJobPrint;
     }
 
+    /* ---- copia, escaneo y cuotas ---- */
+    /**
+     * Un equipo que SÍ trae `pedk.jobs.copy`, `pedk.jobs.scan`, `pedk.quota` y las
+     * capacidades. Por defecto NO están: en la BM5220ADW no se sabe todavía si existen,
+     * y la app tiene que aguantar las dos cosas. Se enciende con `equipo({ trabajos: true })`.
+     *
+     * Los trabajos se pueden construir pero NO arrancar: aquí `start` lanza a propósito,
+     * para que ninguna prueba se acostumbre a lanzar trabajos en el simulador.
+     */
+    let trabajos = null;
+    /** Trabajos de copia/escaneo que alguien intentó arrancar: tiene que quedar vacío. */
+    const arrancados = [];
+    if (opts.trabajos) {
+        class Trabajo {
+            constructor(tipo) { this.tipo = tipo; this.estado = 'JBSts_Init'; }
+            getJobType() { return this.tipo; }
+            getJobState() { return this.estado; }
+            getJobId() { return 1; }
+            addListener() { return true; }
+            removeListener() { return true; }
+            start() { arrancados.push(this.tipo); throw new Error('aqui no se arrancan trabajos'); }
+            cancel() { return true; }
+        }
+        class Parametros { addParameter() { return true; } }
+        trabajos = {
+            copy: { CopyJob: class CopyJob extends Trabajo {}, CopyParameterSet: Parametros, Copies: class Copies {}, JobStateListener: class JobStateListener {} },
+            scan: { ScanJob: class ScanJob extends Trabajo {}, ScanParameterSet: Parametros, Resolution: class Resolution {}, JobStateListener: class JobStateListener {} },
+            quota: {
+                QuotaParam: class QuotaParam {},
+                getLocalQuotaData: () => ({ quota_switch: false, quota_mode: 'QUOTA_MODE_PAGE', user_quota: '0' }),
+                getUserQuotaData: () => 'EINVALIDPARAM',
+            },
+            capabilities: {
+                getSystemCapabilitiesList: () => new Map([
+                    ['Scan_Type', 'ADF'], ['Scan_Enable', true], ['Copy_Enable', true],
+                    ['Color', false], ['Duplex_Enable', true], ['Max_Print_Copies', 99],
+                ]),
+            },
+        };
+    }
+
     const pedk = {
         ui: { widget: { Screen, Label, Button, StyleSheet }, ScreenCtrl, KeyCtrl },
-        device: { setting, storage, powersave: { getCurrentState: () => 0 } },
+        device: Object.assign({ setting, storage, powersave: { getCurrentState: () => 0 } },
+            trabajos ? { capabilities: trabajos.capabilities } : {}),
         net: red,
         jobctl,
-        jobs: { print },
+        jobs: Object.assign({ print }, trabajos ? { copy: trabajos.copy, scan: trabajos.scan } : {}),
     };
+    if (trabajos) {
+        pedk.quota = trabajos.quota;
+    }
 
     return {
         dibujos: () => dibujos,
         pedk,
         switches,
+        arrancados,
         liberados,
         cancelados,
         llegaTrabajo,

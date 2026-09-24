@@ -21,11 +21,20 @@
 
 const IMPRESION = ['FUNC_T_NET_PRINT', 'FUNC_T_USBPORT_PRINT'];
 const COPIA = ['FUNC_T_COPY', 'FUNC_T_IDCOPY', 'FUNC_T_BILL'];
+/**
+ * El escaneo (medido el 24-09-2026): los dos primeros son los que mandan —el del
+ * panel y el que atiende a un PC— y los demás son los destinos, que se apagan también
+ * por si apagar los de arriba no bastara. `FUNC_T_SCAN_TO_USB` NO existe en este
+ * firmware (aquí la flash es UDISK), y por eso se filtra por `conocidos()` antes de
+ * tocar nada: un equipo sin estos interruptores no puede quedarse sin abrir sesión.
+ */
+const ESCANEO = ['FUNC_T_PUSH_SCAN', 'FUNC_T_PULL_SCAN', 'FUNC_T_SCAN_TO_PC',
+    'FUNC_T_SCAN_TO_UDISK', 'FUNC_T_SCAN_TO_EMAIL', 'FUNC_T_SCAN_TO_SMB', 'FUNC_T_SCAN_TO_FTP'];
 
 /** El que tiene que quedar apagado para dar el equipo por bloqueado. */
 const PRINCIPAL = 'FUNC_T_NET_PRINT';
 
-export const INTERRUPTORES = { IMPRESION, COPIA, PRINCIPAL };
+export const INTERRUPTORES = { IMPRESION, COPIA, ESCANEO, PRINCIPAL };
 
 function ajustesNs() {
     return (globalThis.pedk && pedk.device && pedk.device.setting) || null;
@@ -128,6 +137,11 @@ function aplicar(nombres, encendido) {
     return nombres.map((n) => poner(n, encendido));
 }
 
+/** Sólo los interruptores que este firmware conoce: los demás ni se tocan. */
+function conocidos(nombres) {
+    return nombres.filter((n) => exportado(n) || leer(n) !== null);
+}
+
 function resumir(detalles, encendido) {
     const fallidos = detalles.filter((d) => !d.ok).map((d) => d.nombre.replace('FUNC_T_', ''));
     return fallidos.length === 0
@@ -138,10 +152,10 @@ function resumir(detalles, encendido) {
 /**
  * Bloquea. `ok` exige que la impresión de red quede apagada según el propio equipo;
  * el resto (USB, copia) se informa en `detalles` pero no invalida el bloqueo.
- * @param {{impresion?: boolean, copia?: boolean}} que
+ * @param {{impresion?: boolean, copia?: boolean, escaneo?: boolean}} que
  */
 export function cerrar(que) {
-    const q = Object.assign({ impresion: true, copia: false }, que);
+    const q = Object.assign({ impresion: true, copia: false, escaneo: false }, que);
     const detalles = [];
     if (q.impresion) {
         detalles.push(...aplicar(IMPRESION, false));
@@ -150,7 +164,13 @@ export function cerrar(que) {
         detalles.push(...aplicar(COPIA, false));
     }
     const principal = detalles.filter((d) => d.nombre === PRINCIPAL)[0];
+    // El escaneo se decide DESPUÉS del ok a propósito: si un firmware no obedece sus
+    // interruptores, eso no puede impedir que se abra una sesión ni dar por fallido un
+    // bloqueo de impresión que sí funcionó. Queda en `detalles` para el diagnóstico.
     const ok = q.impresion ? !!(principal && principal.ok) : detalles.every((d) => d.ok);
+    if (q.escaneo) {
+        detalles.push(...aplicar(conocidos(ESCANEO), false));
+    }
     return { ok, detalles, resumen: resumir(detalles, false) };
 }
 
@@ -159,7 +179,7 @@ export function cerrar(que) {
  * así que no pregunta ni comprueba nada antes.
  */
 export function abrir(que) {
-    const q = Object.assign({ impresion: true, copia: true }, que);
+    const q = Object.assign({ impresion: true, copia: true, escaneo: true }, que);
     const detalles = [];
     if (q.impresion) {
         detalles.push(...aplicar(IMPRESION, true));
@@ -167,7 +187,11 @@ export function abrir(que) {
     if (q.copia) {
         detalles.push(...aplicar(COPIA, true));
     }
-    return { ok: detalles.every((d) => d.ok), detalles, resumen: resumir(detalles, true) };
+    const ok = detalles.every((d) => d.ok);
+    if (q.escaneo) {
+        detalles.push(...aplicar(conocidos(ESCANEO), true));
+    }
+    return { ok, detalles, resumen: resumir(detalles, true) };
 }
 
 /**
@@ -181,5 +205,5 @@ export function impresionBloqueada() {
 
 /** ¿Hay algún interruptor nuestro apagado? (para desbloquear tras reinstalar) */
 export function algoApagado() {
-    return IMPRESION.concat(COPIA).some((n) => leer(n) === false);
+    return IMPRESION.concat(COPIA, conocidos(ESCANEO)).some((n) => leer(n) === false);
 }

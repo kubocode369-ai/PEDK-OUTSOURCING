@@ -123,6 +123,23 @@ export function fijarBloqueoCopia(bloquear) {
     return res(r.ok, r.resumen);
 }
 
+/**
+ * El escaneo, igual que la copia. Sus interruptores existen en este equipo
+ * (medido 24-09-2026), pero que se lean apagados no prueba que el equipo se niegue a
+ * escanear: hay que probarlo con una hoja.
+ */
+export function fijarBloqueoEscaneo(bloquear) {
+    const a = store.ajustes();
+    store.cambiarAjuste('bloquearEscaneo', !!bloquear);
+    if (!a.bloqueoActivo) {
+        return res(true, bloquear ? 'Escaneo con PIN: se aplicará al encender el bloqueo' : 'Escaneo libre', 'aviso');
+    }
+    const que = { impresion: false, copia: false, escaneo: true };
+    const r = bloquear ? cerradura.cerrar(que) : cerradura.abrir(que);
+    avisar();
+    return res(r.ok, r.resumen);
+}
+
 export function desbloquearTodo() {
     store.cambiarAjuste('bloqueoActivo', false);
     const r = cerradura.abrir();

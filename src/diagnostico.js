@@ -146,14 +146,21 @@ function render() {
             'BLOQUEADO ' + seg + ' s · imprima desde un PC · colados: ' + prueba.fugas.length,
             prueba.fugas.length ? COLOR.peligro : COLOR.aviso));
     } else {
-        w.push(boton('probar', 12, 260, 148, 32, 'Probar bloqueo', COLOR.acento, iniciarPrueba));
-        w.push(boton('releer', 166, 260, 148, 32, 'Volver a leer', COLOR.acento, () => {
+        w.push(boton('probar', 12, 260, 110, 32, 'Bloqueo', COLOR.acento, iniciarPrueba));
+        w.push(boton('releer', 128, 260, 110, 32, 'Releer', COLOR.acento, () => {
             lineas = informe();
             decir('Leído de nuevo', COLOR.ok);
             repintar();
         }));
-        w.push(boton('explorar', 320, 260, 148, 32, 'Explorar SDK', COLOR.acento, () => {
+        w.push(boton('explorar', 244, 260, 110, 32, 'SDK', COLOR.acento, () => {
             lineas = explorar.volcar();
+            pagina = 0;
+            decir('Guarde el log: líneas [explorar]', COLOR.aviso);
+            repintar();
+        }));
+        // Medición de copia/escaneo/cuotas: sólo lee, no lanza ningún trabajo.
+        w.push(boton('medir', 360, 260, 110, 32, 'Copia/Esc', COLOR.acento, () => {
+            lineas = explorar.medirTrabajos();
             pagina = 0;
             decir('Guarde el log: líneas [explorar]', COLOR.aviso);
             repintar();

@@ -68,6 +68,8 @@ function vacio() {
             bloqueoActivo: false,
             /** Bloquear también la copia desde el panel fuera de sesión. */
             bloquearCopia: false,
+            /** Bloquear también el escaneo (panel y desde un PC) fuera de sesión. */
+            bloquearEscaneo: false,
             minutosSesion: config.MINUTOS_SESION_DEFECTO,
             huellaAdmin: null,
         },
@@ -226,6 +228,7 @@ function normalizar(d) {
         base.ajustes.modo = a.modo === 'retencion' ? 'retencion' : 'sesion';
         base.ajustes.bloqueoActivo = !!a.bloqueoActivo;
         base.ajustes.bloquearCopia = !!a.bloquearCopia;
+        base.ajustes.bloquearEscaneo = !!a.bloquearEscaneo;
         if (config.MINUTOS_SESION_OPCIONES.indexOf(a.minutosSesion) >= 0) {
             base.ajustes.minutosSesion = a.minutosSesion;
         }
@@ -500,6 +503,7 @@ export function restaurarTodo(copia) {
     const a = normalizar({ usuarios: [], ajustes: copia.ajustes }).ajustes;
     const aj = d.ajustes;
     aj.bloquearCopia = a.bloquearCopia;
+    aj.bloquearEscaneo = a.bloquearEscaneo;
     aj.minutosSesion = a.minutosSesion;
     aj.huellaAdmin = a.huellaAdmin;
     guardar();

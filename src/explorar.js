@@ -14,6 +14,8 @@
  * Todo va a la consola con el prefijo [explorar]; al panel sólo llega un resumen.
  */
 
+import * as cerradura from './cerradura.js';
+
 const TROZO = 800;
 const MAX_FUENTE = 12000;
 const INTERES = /encrypt|secure|secret|confiden|hold|retain|reten|passw|pin_?code|job_?list|joblist/i;
@@ -239,6 +241,177 @@ export function probarDatos() {
     out.push('getFileList: ' + (listar.join(',') || 'no aparece'));
     log('getFileList', listar.join(' | ') || 'no aparece en pedk');
 
+    out.push('Detalle en el log: [explorar]');
+    return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Copia, escaneo y cuotas: ¿qué de todo esto trae ESTE firmware?       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * La doc del SDK (VT1.24) describe tres cosas que la app todavía no usa y que
+ * cambiarían el producto entero:
+ *
+ *  - `pedk.jobs.copy` / `pedk.jobs.scan`: lanzar la copia y el escaneo DESDE la app,
+ *    con su `getJobId()`, en vez de echar a la persona al menú del equipo y adivinar
+ *    después de quién era el trabajo;
+ *  - `pedk.quota`: cuotas por persona hechas por el firmware;
+ *  - los interruptores del escaneo, que hoy no se tocan.
+ *
+ * Que la doc lo cuente no prueba nada: `getFileList` está citado y no existe, y
+ * `EncryptJobPrint` existía pero su constructor fallaba. Esto es la medición.
+ *
+ * AQUÍ NO SE LANZA NINGÚN TRABAJO: se leen capacidades, se miran los nombres y, como
+ * mucho, se CONSTRUYE un objeto de trabajo (nunca se llama a `start`). Lo único que
+ * se escribe en el equipo es nada.
+ */
+
+const INTERRUPTORES_ESCANEO = ['FUNC_T_PUSH_SCAN', 'FUNC_T_PULL_SCAN', 'FUNC_T_SCAN_TO_PC',
+    'FUNC_T_SCAN_TO_USB', 'FUNC_T_SCAN_TO_UDISK', 'FUNC_T_SCAN_TO_EMAIL',
+    'FUNC_T_SCAN_TO_SMB', 'FUNC_T_SCAN_TO_FTP'];
+
+/** `getSystemCapabilitiesList` promete un Map; otros firmwares devuelven objeto llano. */
+function aPares(v) {
+    const pares = {};
+    if (!v || typeof v !== 'object') {
+        return pares;
+    }
+    if (typeof v.forEach === 'function' && typeof v.get === 'function') {
+        try {
+            v.forEach((valor, clave) => { pares[String(clave)] = valor; });
+            return pares;
+        } catch (e) { /* no era un Map de verdad: se sigue por abajo */ }
+    }
+    for (const k of nombres(v)) {
+        try { pares[k] = v[k]; } catch (e) { /* propiedad que lanza: se salta */ }
+    }
+    return pares;
+}
+
+function texto(v) {
+    return v === undefined ? '?' : String(v);
+}
+
+/** Qué dice el equipo que sabe hacer. Sólo lectura. */
+function capacidades(out) {
+    const c = globalThis.pedk && pedk.device && pedk.device.capabilities;
+    if (!c || typeof c.getSystemCapabilitiesList !== 'function') {
+        out.push('capabilities: NO existe');
+        log('capabilities', 'no existe getSystemCapabilitiesList');
+        return;
+    }
+    let lista = null;
+    try {
+        lista = c.getSystemCapabilitiesList();
+    } catch (e) {
+        out.push('capabilities: LANZÓ ' + String((e && e.message) || e).slice(0, 30));
+        return;
+    }
+    const p = aPares(lista);
+    log('capacidades', JSON.stringify(p));
+    out.push('Escaneo: ' + texto(p.Scan_Enable) + ' · tipo ' + texto(p.Scan_Type)
+        + ' · color ' + texto(p.Color));
+    out.push('Copia: ' + texto(p.Copy_Enable) + ' · dúplex ' + texto(p.Duplex_Enable)
+        + ' · máx copias ' + texto(p.Max_Print_Copies));
+}
+
+/**
+ * Un espacio de trabajos (`copy` o `scan`): qué clases trae, si el constructor
+ * funciona y qué estado nace. NUNCA se llama a `start()`.
+ */
+function espacioDeTrabajos(out, ns, nombreClase, arg, nombreParam) {
+    const j = globalThis.pedk && pedk.jobs && pedk.jobs[ns];
+    if (!j) {
+        out.push('pedk.jobs.' + ns + ': NO existe');
+        log('pedk.jobs.' + ns, 'no existe');
+        return;
+    }
+    const piezas = nombres(j);
+    log('pedk.jobs.' + ns, piezas.join(','));
+    out.push('jobs.' + ns + ': ' + piezas.length + ' piezas · ' + nombreClase + ' ' + tipo(j, nombreClase));
+
+    const Clase = j[nombreClase];
+    if (typeof Clase === 'function') {
+        volcarClase(nombreClase, Clase);
+        try {
+            const trabajo = new Clase(arg);
+            out.push('new ' + nombreClase + '(' + arg + '): funciona');   // no se arranca
+            log(nombreClase + ' instancia',
+                nombres(trabajo).concat(nombres(Object.getPrototypeOf(trabajo) || {})).join(','));
+            let estado = '';
+            try {
+                estado = String(trabajo.getJobState());
+            } catch (e) {
+                estado = 'lanzó ' + String((e && e.message) || e).slice(0, 20);
+            }
+            out.push(nombreClase + '.getJobState(): ' + estado.slice(0, 30));
+        } catch (e) {
+            out.push('new ' + nombreClase + ': ' + String((e && e.message) || e).slice(0, 34));
+        }
+    }
+
+    const Param = j[nombreParam];
+    if (typeof Param !== 'function') {
+        out.push(nombreParam + ': ' + tipo(j, nombreParam));
+        return;
+    }
+    try {
+        const p = new Param();
+        const tieneAdd = typeof p.addParameter === 'function';
+        out.push('new ' + nombreParam + ': ok · addParameter ' + (tieneAdd ? 'sí' : 'NO'));
+    } catch (e) {
+        out.push('new ' + nombreParam + ': ' + String((e && e.message) || e).slice(0, 30));
+    }
+}
+
+/** Cuotas por persona hechas por el firmware. Sólo se LEE. */
+function cuotas(out) {
+    const q = globalThis.pedk && pedk.quota;
+    if (!q) {
+        out.push('pedk.quota: NO existe');
+        log('pedk.quota', 'no existe');
+        return;
+    }
+    const piezas = nombres(q);
+    log('pedk.quota', piezas.join(','));
+    out.push('quota: ' + piezas.length + ' piezas · getLocalQuotaData ' + tipo(q, 'getLocalQuotaData'));
+    if (typeof q.getLocalQuotaData !== 'function') {
+        return;
+    }
+    let d = null;
+    try {
+        d = q.getLocalQuotaData();
+    } catch (e) {
+        out.push('getLocalQuotaData: LANZÓ ' + String((e && e.message) || e).slice(0, 28));
+        return;
+    }
+    const claves = d && typeof d === 'object' ? nombres(d) : [];
+    log('getLocalQuotaData', JSON.stringify(d) + ' · claves ' + claves.join(','));
+    out.push('cuota local: ' + (claves.length ? claves.join(',').slice(0, 46) : String(d).slice(0, 46)));
+}
+
+/** Los interruptores del escaneo, como ya se leen los de copia. */
+function interruptoresEscaneo(out) {
+    for (const n of INTERRUPTORES_ESCANEO) {
+        const linea = n.replace('FUNC_T_', '') + ': ' + cerradura.leerCrudo(n)
+            + (cerradura.exportado(n) ? '' : ' (no exportado)');
+        log('interruptor', linea);
+        out.push(linea);
+    }
+}
+
+/**
+ * La medición de copia, escaneo y cuotas en una sola pulsación.
+ * @returns {string[]} líneas cortas para el panel; el detalle va al log [explorar]
+ */
+export function medirTrabajos() {
+    const out = [];
+    capacidades(out);
+    espacioDeTrabajos(out, 'copy', 'CopyJob', 'COPY_NORMAL', 'CopyParameterSet');
+    espacioDeTrabajos(out, 'scan', 'ScanJob', 'SCAN_TO_USB', 'ScanParameterSet');
+    cuotas(out);
+    interruptoresEscaneo(out);
     out.push('Detalle en el log: [explorar]');
     return out;
 }
