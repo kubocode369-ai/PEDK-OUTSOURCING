@@ -32,6 +32,7 @@ import * as web from './web.js';
 import * as acciones from './acciones.js';
 import * as copia from './copia.js';
 import * as escaneo from './escaneo.js';
+import * as estados from './estados.js';
 import { abrirAjustes } from './ajustes.js';
 
 const { ScreenCtrl, KeyCtrl } = pedk.ui;
@@ -642,6 +643,7 @@ function arrancar() {
     historial.vigilar(alTrabajo, ritmoHistorial, config.HISTORIAL_CON_SESION_MS);
     try {
         vigia.iniciar();
+        estados.iniciar();
         vigia.guardian(decidirGuardian);
     } catch (e) { console.log('[arranque] vigía: ' + (e && e.message)); }
     try {

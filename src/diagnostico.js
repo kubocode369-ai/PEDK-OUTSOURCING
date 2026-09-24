@@ -20,6 +20,7 @@ import * as historial from './historial.js';
 import * as retencion from './retencion.js';
 import * as store from './store.js';
 import * as vigia from './vigia.js';
+import * as estados from './estados.js';
 import * as explorar from './explorar.js';
 import * as web from './web.js';
 
@@ -80,6 +81,7 @@ export function informe() {
     }
 
     out.push(...vigia.informe());
+    out.push(...estados.informe());
     out.push(...web.informe());
 
     const ret = retencion.disponible();

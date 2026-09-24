@@ -23,6 +23,7 @@ import { COLOR, ambito, boton, etiqueta, pantalla, recortar } from './ui.js';
 import { mostrar, repintar, pantallaActiva } from './router.js';
 import { guard } from './guard.js';
 import * as store from './store.js';
+import * as estados from './estados.js';
 
 /** Los formatos que se ofrecen. Los números son del SDK: 0 JPEG, 1 PDF, 2 TIFF, 3 OFD. */
 const FORMATOS = [
@@ -162,6 +163,23 @@ function soltar() {
     estado = 'listo';
 }
 
+/**
+ * Llega un aviso del EQUIPO (no del trabajo): "ponga la hoja siguiente", "guardando
+ * en la memoria USB", "no se pudo enviar el correo"… Manda sobre lo que hubiéramos
+ * puesto nosotros, porque el equipo sabe más.
+ */
+function alEstadoEquipo(m) {
+    decir(m.texto, m.color);
+    // Si el equipo dice que el envío falló, no se puede dejar un "Listo" en pantalla.
+    if (m.nivel === 'malo' && estado === 'terminando') {
+        estado = 'escaneando';
+    }
+    if (pantallaActiva() === 'escaneo') {
+        repintar();
+    }
+}
+
+/** Llega un estado del TRABAJO (JBSts_*). */
 function alEstado(bruto) {
     const s = String(bruto);
     console.log('[escaneo] estado: ' + s);
@@ -352,6 +370,7 @@ function render() {
     w.push(etiqueta('t', 12, 8, 300, 24, 'Escanear', COLOR.texto));
     w.push(boton('volver', 376, 6, 92, 32, 'Volver', COLOR.acento, () => {
         soltar();
+        estados.olvidar(alEstadoEquipo);
         if (alVolver) {
             alVolver();
         }
@@ -399,6 +418,7 @@ function render() {
 export function abrirEscaneo(usuario, volver) {
     alVolver = volver;
     quien = usuario || '';
+    estados.alCambiar(alEstadoEquipo);
     if (estado === 'listo') {
         destinos = destinosDe(quien);
         iDestino = 0;

@@ -19,6 +19,7 @@
 import { COLOR, ambito, boton, etiqueta, pantalla, recortar } from './ui.js';
 import { mostrar, repintar, pantallaActiva } from './router.js';
 import { guard } from './guard.js';
+import * as estados from './estados.js';
 
 /**
  * Los orígenes del documento. Los números son del SDK (0 Auto, 1 DADF, 2 ADF, 3 FB,
@@ -128,7 +129,15 @@ function soltar() {
     estado = 'listo';
 }
 
-/** Llega un estado del equipo (JBSts_*). */
+/** Un aviso del EQUIPO: atasco, tapa abierta, sin tóner… manda sobre el nuestro. */
+function alEstadoEquipo(m) {
+    decir(m.texto, m.color);
+    if (pantallaActiva() === 'copia') {
+        repintar();
+    }
+}
+
+/** Llega un estado del TRABAJO (JBSts_*). */
 function alEstado(bruto) {
     const s = String(bruto);
     console.log('[copia] estado: ' + s);
@@ -250,6 +259,7 @@ function render() {
     w.push(boton('volver', 376, 6, 92, 32, 'Volver', COLOR.acento, () => {
         // Volver no cancela: la copia sigue y se cuenta igual. Sólo se deja de mirar.
         soltar();
+        estados.olvidar(alEstadoEquipo);
         if (alVolver) {
             alVolver();
         }
@@ -290,6 +300,7 @@ function render() {
 /** Abre la pantalla. `volver` es lo que hay que hacer al salir. */
 export function abrirCopia(volver) {
     alVolver = volver;
+    estados.alCambiar(alEstadoEquipo);
     // Se vuelve a preguntar en cada apertura (cuesta un objeto, no toca al equipo): así
     // un firmware nuevo que ya acepte el origen enseña el botón sin reinstalar nada.
     soportaOrigen = null;

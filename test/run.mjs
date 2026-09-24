@@ -1317,7 +1317,12 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         /^function/.test(pedir(r).body) && web.bytesUtf8(pedir(r).body) <= config.WEB_MAX_BYTES));
 
     // Impresora "de antes": configurada y con datos, con acentos y bastante registro.
-    store.agregarUsuario('nono', '2468', { nombreCompleto: 'Íñigo Núñez 😀', cedula: '123456789' });
+    store.agregarUsuario('nono', '2468', { nombreCompleto: 'Íñigo Núñez 😀', correo: 'nono@ejemplo.com' });
+    // Lo del escaneo también tiene que sobrevivir a reinstalar: es lo que se pierde al
+    // instalar una versión nueva, y sin ello la persona se queda sin sus destinos.
+    (await import('./.build/acciones.mjs')).fijarCarpetaEscaneo({
+        servidor: '192.168.0.50', ruta: '/escaneos', usuario: 'escaner', clave: 'x1', puerto: 445,
+    });
     for (let i = 0; i < 40; i++) store.contar('jperez', { tipo: 'PRINT', paginas: 2, doc: 'Informe año ' + i + '.pdf' });
     store.contar('nono', { tipo: 'COPY', paginas: 5 });
     pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
@@ -1368,6 +1373,10 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         && store.usuarios().filter((u) => u.nombre === 'nono')[0].nombreCompleto === 'Íñigo Núñez 😀');
     check('vuelven los contadores y el registro', JSON.stringify(despues.contadores) === JSON.stringify(antes.contadores)
         && despues.registro.length === antes.registro.length);
+    check('vuelve lo del escaneo: el correo de cada uno y la carpeta compartida',
+        (store.usuario('nono') || {}).correo === 'nono@ejemplo.com'
+        && (store.carpetaEscaneo() || {}).servidor === '192.168.0.50'
+        && (store.carpetaEscaneo() || {}).clave === 'x1', JSON.stringify(store.carpetaEscaneo()));
     check('vuelven los ajustes y el PIN de administrador', despues.ajustes.bloquearCopia === true
         && despues.ajustes.bloquearEscaneo === antes.ajustes.bloquearEscaneo
         && despues.ajustes.huellaAdmin === antes.ajustes.huellaAdmin);
@@ -1877,6 +1886,62 @@ hablar(); console.log('· Escanear desde la app'); silenciar();
     hablar();
     check('si el escáner está ocupado lo dice y deja reintentar', /ocupado/.test(mock.textos())
         && /ESCANEAR/.test(mock.textos()), mock.textos());
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
+hablar(); console.log('· Lo que el equipo cuenta por su cuenta (canal de estados)'); silenciar();
+{
+    const estados = await import('./.build/estados.mjs');
+    const escaneo = await import('./.build/escaneo.mjs');
+
+    hablar();
+    check('traduce lo que le sirve a la persona',
+        /siguiente/.test(estados.mensajeDe('PEDK_SID_I_SCAN_NEXT_PAGE_WAITING').texto)
+        && /Correo enviado/.test(estados.mensajeDe('PEDK_SID_I_SCAN_OUT_TO_EML_SUCCESS').texto),
+        JSON.stringify(estados.mensajeDe('PEDK_SID_I_SCAN_NEXT_PAGE_WAITING')));
+    check('los atascos y las tapas van por familias, no uno a uno',
+        /atascada/.test(estados.mensajeDe('PEDK_SID_E_SCAN_PAPER_JAM_HEAD_NOT_REACH_EXIT').texto)
+        && /tapa/.test(estados.mensajeDe('PEDK_SID_E_SCAN_FB_COVER_OPEN').texto));
+    check('lo que no le sirve a nadie no se enseña', estados.mensajeDe('PEDK_SID_I_SCAN_IDLE') === null);
+    check('un fallo se marca como tal', estados.mensajeDe('PEDK_SID_E_SCAN_ADF_PAPER_OUT').nivel === 'malo');
+    // Los que mandó el equipo de verdad el 25-09-2026, incluido el del USB que falta.
+    check('traduce los que manda ESTE equipo',
+        /No hay memoria USB/.test(estados.mensajeDe('PEDK_SID_E_SCAN_TO_FILE_UDISK_SPACE_OVERSIZE').texto)
+        && estados.mensajeDe('PEDK_SID_I_SCAN_SAVE_TO_UDISK').nivel === 'ok'
+        && estados.mensajeDe('PEDK_SID_W_INPUT_TRAY2_FEW') !== null);
+    silenciar();
+
+    equipo({ trabajos: true });
+    estados.iniciar();
+    hablar();
+    check('se engancha al canal del equipo', estados.disponible() === true);
+    silenciar();
+
+    // Lo que de verdad arregla esto: la pantalla dice lo que pasa, no lo que suponemos.
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('escanear');
+    mock.estado('PEDK_SID_I_SCAN_NEXT_PAGE_WAITING');
+    hablar();
+    check('mientras escanea, avisa de que espera la hoja siguiente',
+        /hoja siguiente/.test(mock.textos()), mock.textos());
+    silenciar();
+
+    // Y lo más importante: el correo que NO salió deja de parecer un "Listo".
+    mock.pulsar('terminar');
+    mock.estado('PEDK_SID_I_SCAN_OUT_TO_EML_CANCEL');
+    hablar();
+    check('si el envío falla, se dice y no se queda en "guardando"',
+        /NO se pudo enviar el correo/.test(mock.textos()) && !/Guardando el documento/.test(mock.textos()),
+        mock.textos());
+    silenciar();
+    mock.copiaAvisa('JBSts_Finish');
+
+    // Un firmware sin canal de estados: ni se engancha ni estorba.
+    equipo({ trabajos: true, sinEstados: true });
+    hablar();
+    check('sin canal de estados no se rompe nada', estados.disponible() === false
+        && estados.informe().some((l) => /NO existe/.test(l)), estados.informe().join(' | '));
     silenciar();
 }
 

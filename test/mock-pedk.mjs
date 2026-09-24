@@ -318,6 +318,19 @@ export function makePedk(opts = {}) {
     const libretas = [];
     /** Las respuestas a la espera del equipo: 'continue' (otra página) o 'finish'. */
     const seguidos = [];
+
+    /**
+     * El canal de estados del equipo (`pedk.device.status`): avisa de lo que el trabajo
+     * no cuenta (esperando hoja, guardando, correo enviado, atasco…). Con
+     * `equipo({ sinEstados: true })` se imita un firmware que no lo trae.
+     */
+    const oyentesEstado = { push: [], remove: [] };
+    const status = {
+        addOnPushStatusListener: (cb) => { oyentesEstado.push.push(cb); return true; },
+        addOnRemoveStatusListener: (cb) => { oyentesEstado.remove.push(cb); return true; },
+        getStatusIdList: () => [],
+        STATUS_TYPE: { STATUS_ID_TYPE_ERROR: 'STATUS_ID_TYPE_ERROR', STATUS_ID_TYPE_WARNING: 'STATUS_ID_TYPE_WARNING' },
+    };
     if (opts.trabajos) {
         class Trabajo {
             constructor(tipo) { this.tipo = tipo; this.estado = 'JBSts_Init'; this.oyentes = []; }
@@ -404,6 +417,7 @@ export function makePedk(opts = {}) {
     const pedk = {
         ui: { widget: { Screen, Label, Button, StyleSheet }, ScreenCtrl, KeyCtrl },
         device: Object.assign({ setting, storage, powersave: { getCurrentState: () => 0 } },
+            opts.sinEstados ? {} : { status },
             trabajos ? { capabilities: trabajos.capabilities } : {}),
         net: red,
         jobctl,
@@ -421,6 +435,11 @@ export function makePedk(opts = {}) {
         arrancados,
         libretas,
         seguidos,
+        /** El equipo levanta (o retira) un estado, como el firmware de verdad. */
+        estado: (id, quitado) => {
+            const lista = quitado ? oyentesEstado.remove : oyentesEstado.push;
+            lista.slice().forEach((cb) => cb({ id }));
+        },
         /** El equipo avisa de un cambio de estado del último trabajo (JBSts_Running…). */
         copiaAvisa: (estado) => { if (ultimo) ultimo.avisar(estado); },
         liberados,
