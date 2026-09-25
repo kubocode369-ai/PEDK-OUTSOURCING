@@ -1,4 +1,4 @@
-# Impresión con PIN — guía para el usuario
+# Vizo — guía para el usuario
 
 Una hoja. Imprímela y déjala junto a la impresora.
 

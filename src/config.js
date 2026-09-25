@@ -83,7 +83,7 @@ export const config = {
      * /pedk/app_notify/ lo pone el firmware y no se puede cambiar. Era
      * 'impresion-pin-BM5220ADW'; se acortó para que la dirección sea fácil de dar.
      */
-    WEB_APP: 'impresion',
+    WEB_APP: 'vizo',
     /** Minutos sin usar la web tras los que hay que volver a poner el PIN. */
     WEB_SESION_MS: 15 * 60 * 1000,
     /**

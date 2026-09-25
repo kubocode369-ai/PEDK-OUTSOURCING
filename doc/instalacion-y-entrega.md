@@ -1,4 +1,4 @@
-# Instalación y entrega — guía del técnico
+# Vizo — instalación y entrega
 
 Para quien instala la app en casa del cliente. Sigue el orden: cada paso da por hecho el
 anterior.

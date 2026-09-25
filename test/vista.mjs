@@ -1,5 +1,5 @@
 // Vista previa del panel web con datos de ejemplo, SIN impresora: npm test (genera .build/)
-// y luego  node test/vista.mjs  -> http://localhost:8123/pedk/app_notify/impresion (PIN 2580).
+// y luego  node test/vista.mjs  -> http://localhost:8123/pedk/app_notify/vizo (PIN 2580).
 import http from 'http';
 import { makePedk } from './mock-pedk.mjs';
 globalThis.pedk = makePedk({ retencion: { KuboC: [] } }).pedk;
@@ -23,6 +23,6 @@ http.createServer((req, res) => {
     res.end(r.body);
   });
 }).listen(8123, () => {
-  const b = pedk.net.http.receiveData({ url: '/pedk/app_notify/impresion/entrar', method: 'POST', body: 'pin=2580' }).body;
+  const b = pedk.net.http.receiveData({ url: '/pedk/app_notify/vizo/entrar', method: 'POST', body: 'pin=2580' }).body;
   console.log('TOKEN ' + /[?]s=([0-9a-f]+)/.exec(b)[1]);
 });

@@ -1,7 +1,7 @@
 /**
  * Panel de administración servido por la PROPIA impresora, como la web de Pantum:
  *
- *     http://<ip>/pedk/app_notify/impresion
+ *     http://<ip>/pedk/app_notify/vizo
  *
  * Medido el 21-09-2026: el firmware llama a `pedk.net.http.receiveData` con cada
  * petición cuya ruta empieza por /pedk/app_notify/<nombre de la app> (el `name` del
@@ -261,7 +261,7 @@ function documento(titulo, token, activa, cuerpo, volver) {
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
         + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/"><link rel="icon" href="data:,">'
         + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="' + estatico('estilo.css') + '"></head><body>'
-        + '<header><b>Impresión con PIN</b></header>'
+        + '<header><b>Vizo</b></header>'
         + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
             + (p[0] === activa ? ' class="on"' : '') + '>' + p[1] + '</a>').join('') + '</nav>' : '')
         + '<main>' + (volver ? '<a class="v" href="' + volver[0] + '?s=' + token + '">‹ ' + volver[1] + '</a>' : '')
@@ -300,8 +300,20 @@ function campoPin(nombre) {
     return '<input type="password" name="' + (nombre || 'pin') + '" size="10" inputmode="numeric" autocomplete="off">';
 }
 
+/**
+ * La "V" del logo, dibujada en vectores. Va SÓLO aquí: la hoja de estilos está a 1876
+ * bytes de los 1900 que nos permitimos, así que no cabe como imagen de fondo, y un
+ * fichero aparte sería una petición más (1,15 s cada una en este equipo). Dibujada
+ * pesa ~200 bytes y viaja dentro de la propia página.
+ */
+const MARCA = '<svg viewBox="0 0 100 86" width="64" height="55">'
+    + '<path fill="#c1122f" d="M3 4h24l36 78q-16 5-22-6L3 4z"/>'
+    + '<path fill="#3a4048" d="M97 4H73L52 46l11 24z"/></svg>';
+
 function paginaLogin(msg) {
-    return documento('Administración', null, null, mensajeHtml(msg) + '<div style="max-width:420px">' + panel('Entrar', '<form method="post" action="entrar">'
+    return documento('Administración', null, null, mensajeHtml(msg) + '<div style="max-width:420px">'
+        + '<p style="text-align:center;margin:4px 0 10px">' + MARCA + '</p>'
+        + panel('Entrar', '<form method="post" action="entrar">'
         + campo('PIN de administrador', '<input type="password" name="pin" inputmode="numeric" autofocus>')
         + '<p><button class="p">Entrar</button></p><p class="k">Es el mismo PIN que en Ajustes del panel de la impresora.</p></form>') + '</div>');
 }

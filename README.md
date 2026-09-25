@@ -1,4 +1,4 @@
-# Impresión con PIN — Pantum BM5220ADW
+# Vizo — impresión con PIN para Pantum BM5220ADW
 
 App PEDK que corre **dentro de la impresora**. Nadie imprime, fotocopia ni escanea sin
 identificarse en el panel con **usuario y PIN**, y se cuenta lo que hace cada persona.
@@ -88,12 +88,12 @@ apagar la impresión de red bloquea también la impresión segura.
 La impresora sirve la administración en:
 
 ```
-http://<IP de la impresora>/pedk/app_notify/impresion
+http://<IP de la impresora>/pedk/app_notify/vizo
 ```
 
 El tramo `/pedk/app_notify/` lo pone el firmware y no se puede quitar; lo que sigue es el
 `name` del `package.json` (debe coincidir con `config.WEB_APP`). Hay un acceso directo en
-`herramientas/Impresión con PIN.url` (cambiar la IP si hace falta). **Conviene reservar
+`herramientas/Vizo.url` (cambiar la IP si hace falta). **Conviene reservar
 la IP de la impresora en el router**: si cambia, la dirección deja de funcionar.
 
 Se entra con el **PIN de administrador**, el mismo del panel (de fábrica `2580`). Tras 5
@@ -125,7 +125,7 @@ fallos se frena 5 minutos; la sesión caduca a los 15 minutos sin uso.
 **Diseño**: colores y paneles de la web de Pantum del equipo (rojo `#BB0033`, cabeceras
 rojas, borde gris), sin su logotipo. Responsive: en el móvil las pestañas se deslizan,
 cada usuario es una tarjeta y las tablas se desplazan dentro de su panel. Para verlo sin
-impresora: `npm test` y luego `node test/vista.mjs` → `http://localhost:8123/pedk/app_notify/impresion` (PIN `2580`).
+impresora: `npm test` y luego `node test/vista.mjs` → `http://localhost:8123/pedk/app_notify/vizo` (PIN `2580`).
 
 ## Cuántos usuarios
 
@@ -282,6 +282,6 @@ Instalar `build/impresion_signed.tar` con **PEDK Installer** (antes, descargar l
 | `herramientas/hacer-manuales.mjs` | Convierte los manuales de `doc/` en PDF A4 con Chrome |
 | `herramientas/hacer-plantilla.py` | Genera la plantilla de Excel y la incrusta en la app |
 | `herramientas/plantilla-usuarios.xlsx` | La plantilla, para tenerla a mano |
-| `herramientas/Impresión con PIN.url` | Acceso directo al panel web |
+| `herramientas/Vizo.url` | Acceso directo al panel web |
 | `test/` | Simulador de `pedk`, pruebas, ficheros de Excel de prueba y `vista.mjs` (vista previa del panel web sin impresora) |
 | `doc/` | Manuales: usuario, administrador e instalación con prueba de aceptación |

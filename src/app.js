@@ -1,5 +1,5 @@
 /**
- * Impresión con PIN — Pantum BM5220ADW.
+ * Vizo — impresión con PIN para Pantum BM5220ADW.
  *
  * Nadie imprime sin identificarse en el panel con su usuario y su PIN, y se cuenta lo
  * que imprime (y copia) cada persona. Todo vive en la impresora; no hay servidor.
@@ -107,7 +107,7 @@ function renderInicio() {
     ambito('ini');
     const a = store.ajustes();
     const w = [pantalla()];
-    w.push(etiqueta('t', 12, 12, 456, 26, 'Impresión con PIN', COLOR.texto, 'center'));
+    w.push(etiqueta('t', 12, 12, 456, 26, 'Vizo · Impresión con PIN', COLOR.texto, 'center'));
     const [estado, color] = estadoInicio();
     w.push(etiqueta('estado', 12, 44, 456, 22, estado, color, 'center'));
     // La memoria en sólo lectura manda sobre cualquier otro aviso: mientras dure, lo
