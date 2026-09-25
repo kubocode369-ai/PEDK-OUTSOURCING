@@ -16,6 +16,14 @@ Este README es para quien toca el código. Para usar y entregar la app:
 | [`doc/manual-administrador.md`](doc/manual-administrador.md) | Quien gestiona usuarios, destinos, contadores y respaldos |
 | [`doc/instalacion-y-entrega.md`](doc/instalacion-y-entrega.md) | Quien instala en casa del cliente, con prueba de aceptación |
 
+Los tres están además en **PDF listo para imprimir** en [`doc/pdf/`](doc/pdf). Para
+regenerarlos tras cambiar un manual (usa el Chrome que ya está instalado, sin añadir
+dependencias):
+
+```
+node herramientas/hacer-manuales.mjs
+```
+
 Proyecto independiente de `CloudPrint` y de `SoprintPantum5220`. Reutiliza lo que ya se
 comprobó en este equipo con esas dos apps (dibujo del panel, salida al menú, lectura del
 historial, reposo), pero no comparte código ni se instala junto a ellas.
@@ -271,6 +279,7 @@ Instalar `build/impresion_signed.tar` con **PEDK Installer** (antes, descargar l
 | `src/retencion.js` | Impresión confidencial (modo retención) |
 | `src/store.js` | Memoria del equipo: usuarios, huellas de PIN, contadores, registro, copia, importación, máximo |
 | `src/ui.js` | Widgets, teclado numérico y teclado de texto |
+| `herramientas/hacer-manuales.mjs` | Convierte los manuales de `doc/` en PDF A4 con Chrome |
 | `herramientas/hacer-plantilla.py` | Genera la plantilla de Excel y la incrusta en la app |
 | `herramientas/plantilla-usuarios.xlsx` | La plantilla, para tenerla a mano |
 | `herramientas/Impresión con PIN.url` | Acceso directo al panel web |
