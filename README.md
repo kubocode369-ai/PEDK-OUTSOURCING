@@ -1,9 +1,20 @@
 # Impresión con PIN — Pantum BM5220ADW
 
-App PEDK que corre **dentro de la impresora**. Nadie imprime ni fotocopia sin
-identificarse en el panel con **usuario y PIN**, y se cuenta lo que imprime y copia cada
-persona. No necesita servidor ni internet: usuarios, contadores y ajustes viven en la
-memoria del equipo, y se administra desde un **panel web que sirve la propia impresora**.
+App PEDK que corre **dentro de la impresora**. Nadie imprime, fotocopia ni escanea sin
+identificarse en el panel con **usuario y PIN**, y se cuenta lo que hace cada persona.
+Además se **copia y se escanea desde la propia app**, sin salir al menú del equipo. No
+necesita servidor ni internet: usuarios, contadores y ajustes viven en la memoria del
+equipo, y se administra desde un **panel web que sirve la propia impresora**.
+
+## Manuales
+
+Este README es para quien toca el código. Para usar y entregar la app:
+
+| Documento | Para quién |
+|---|---|
+| [`doc/manual-usuario.md`](doc/manual-usuario.md) | Una hoja para pegar junto a la impresora |
+| [`doc/manual-administrador.md`](doc/manual-administrador.md) | Quien gestiona usuarios, destinos, contadores y respaldos |
+| [`doc/instalacion-y-entrega.md`](doc/instalacion-y-entrega.md) | Quien instala en casa del cliente, con prueba de aceptación |
 
 Proyecto independiente de `CloudPrint` y de `SoprintPantum5220`. Reutiliza lo que ya se
 comprobó en este equipo con esas dos apps (dibujo del panel, salida al menú, lectura del
@@ -36,10 +47,29 @@ también la impresión segura): la impresión de red queda abierta y el guardiá
 obliga a usar el PIN. Se activa con **Ajustes → Bloqueo: ENCENDIDO**.
 
 **Fotocopias con PIN** (Ajustes → Copia: con PIN): sin nadie dentro, la copia, la copia
-de DNI y la de facturas están apagadas. Al entrar se encienden y la pantalla ofrece
-**Ir a copiar**, que sale al menú de la impresora **sin cerrar la sesión**; lo que se
-copie se le cuenta a esa persona. Al pulsar **Terminar** (o al caducar la sesión) se
-vuelven a apagar. Para volver a la app desde el menú: su icono (comprobado el 22-09-2026).
+de DNI y la de facturas están apagadas. Al entrar se encienden y la sesión ofrece
+**Copiar**, una pantalla propia (`src/copia.js`, `pedk.jobs.copy`) con el número de
+copias: la persona no sale de la app. Queda el botón **Menú del equipo** para lo demás.
+Al pulsar **Terminar** (o al caducar la sesión) se vuelven a apagar.
+
+Este firmware **no deja elegir el origen** (cristal o alimentador): `COPY_SCAN_SOURCE`
+lanza `EOPNOTSUPP`, así que ese botón sólo aparece si algún día lo acepta. El equipo
+decide solo: alimentador si hay hojas, si no el cristal.
+
+**Escaneo con PIN** (Ajustes → Escaneo: con PIN): apaga `PUSH_SCAN`, `PULL_SCAN` y los
+destinos `SCAN_TO_*` fuera de sesión — también bloquea el Asistente de Escaneado que se
+usa desde un PC. Con sesión, la pantalla **Escanear** (`src/escaneo.js`,
+`pedk.jobs.scan`) manda a **memoria USB, la carpeta de esa persona o su correo**, en PDF
+o JPEG y en B/N, grises o color. El destino viaja DENTRO del trabajo
+(`AddressBookParam`), así que no hay que dar de alta a nadie en la libreta del equipo.
+Hay que llamar a `finish()` para cerrar el documento: el equipo se queda esperando más
+hojas hasta que se le dice que acabó.
+
+**Lo que el equipo cuenta por su cuenta** (`src/estados.js`): la app escucha
+`pedk.device.status` y traduce sus avisos — esperando la hoja siguiente, guardando,
+correo enviado o **no** enviado, sin hojas, tapa abierta, atasco, sin memoria USB. Sin
+eso, un envío fallido se veía en pantalla como "Listo", porque el trabajo termina bien
+igualmente.
 
 **Modo sesión (alternativo, no recomendado)**: el equipo se desbloquea al entrar y se
 bloquea al salir, con la cerradura de interruptores. No sirve para "sólo con PIN" porque
@@ -222,7 +252,10 @@ Instalar `build/impresion_signed.tar` con **PEDK Installer** (antes, descargar l
 
 | Archivo | Qué hace |
 |---|---|
-| `src/app.js` | Pantallas del panel: inicio, usuario, PIN, sesión, documentos retenidos, "Ir a copiar"; arranque |
+| `src/app.js` | Pantallas del panel: inicio, usuario, PIN, sesión, documentos retenidos, Copiar y Escanear; arranque |
+| `src/copia.js` | Pantalla de copia desde la app (`pedk.jobs.copy`): copias, estados y cancelar |
+| `src/escaneo.js` | Pantalla de escaneo (`pedk.jobs.scan`): destino por persona, formato, color, otra página y terminar |
+| `src/estados.js` | Escucha los avisos del equipo (`pedk.device.status`) y los traduce a lo que ve la persona |
 | `src/ajustes.js` | Ajustes en el panel: usuarios, contadores, últimos trabajos, modo, bloqueo, PIN admin |
 | `src/acciones.js` | Modo, bloqueo, copia, duración y desbloqueo: lógica común al panel y a la web |
 | `src/web.js` | Panel web: login, usuarios, importar, contadores, ajustes, copia de seguridad; troceo de respuestas y subidas |
@@ -242,3 +275,4 @@ Instalar `build/impresion_signed.tar` con **PEDK Installer** (antes, descargar l
 | `herramientas/plantilla-usuarios.xlsx` | La plantilla, para tenerla a mano |
 | `herramientas/Impresión con PIN.url` | Acceso directo al panel web |
 | `test/` | Simulador de `pedk`, pruebas, ficheros de Excel de prueba y `vista.mjs` (vista previa del panel web sin impresora) |
+| `doc/` | Manuales: usuario, administrador e instalación con prueba de aceptación |
