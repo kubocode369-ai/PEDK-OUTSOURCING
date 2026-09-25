@@ -188,10 +188,26 @@ function sesionValida(token, ahora) {
  * aguanta el firmware y se perdía. El administrador veía la página sin estilo y sin
  * opciones hasta recargar dos o tres veces (visto el 23-09-2026).
  */
+/**
+ * EL LOGO, en SVG. Es texto, así que la impresora lo sirve como cualquier otra página
+ * (un PNG no podría: las respuestas son cadenas y el binario no sobreviviría). Se pide
+ * UNA vez —con ?v=huella y caché de un año— y en cada página sólo cuesta la etiqueta
+ * <img>. Antes iba dibujado dentro de la página de acceso, pero así se ve en TODAS sin
+ * gastar bytes en cada una.
+ *
+ * La V son los trazos del logo. La palabra va como texto en Arial Black, que es lo más
+ * parecido que hay en cualquier PC, con el punto rojo sobre la i dibujado aparte.
+ */
+const LOGO = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 88">'
+    + '<path fill="#c1122f" d="M3 4h24l36 78q-16 5-22-6L3 4z"/>'
+    + '<path fill="#3a4048" d="M97 4H73L52 46l11 24z"/>'
+    + '<text x="108" y="74" font-family="Arial Black,Arial" font-size="80" letter-spacing="-3" fill="#3a4048">Vizo</text>'
+    + '<rect x="198" y="8" width="17" height="15" fill="#c1122f"/></svg>';
+
 const ESTILO = '*{box-sizing:border-box}'
     + 'body{margin:0;font:15px/1.4 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
-    + 'header{background:#3a4048;padding:13px 16px;border-bottom:4px solid #b03}'
-    + 'header b{color:#fff;font-size:23px;letter-spacing:1px}'
+    + 'header{background:#fff;padding:9px 16px;text-align:center;border-bottom:3px solid #b03}'
+    + 'header img{height:34px}'
     + 'nav{display:flex;overflow-x:auto;background:#eee;border-bottom:1px solid #bbb}'
     + 'nav a{padding:11px 16px;color:#333;font-weight:600;text-decoration:none;white-space:nowrap}'
     + 'nav a.on{background:#b03;color:#fff}nav a:last-child{margin-left:auto}'
@@ -233,7 +249,7 @@ let version = null;
 /** Huella de todos los ficheros estáticos: cambia cuando cambia cualquiera. */
 function versionEstaticos() {
     if (!version) {
-        version = store.huella('#estaticos', ESTILO + LISTA_JS + CONTADORES_JS + CSV_JS + COPIA_BAJAR_JS
+        version = store.huella('#estaticos', LOGO + ESTILO + LISTA_JS + CONTADORES_JS + CSV_JS + COPIA_BAJAR_JS
             + COPIA_SUBIR_JS + SUBIR_JS + TABLA_JS + IMPORTAR_JS).slice(0, 8);
     }
     return version;
@@ -267,7 +283,7 @@ function documento(titulo, token, activa, cuerpo, volver) {
     return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
         + '<meta name="viewport" content="width=device-width,initial-scale=1"><base href="' + BASE + '/"><link rel="icon" href="data:,">'
         + '<title>' + escapar(titulo) + '</title><link rel="stylesheet" href="' + estatico('estilo.css') + '"></head><body>'
-        + '<header><b>Vizo</b></header>'
+        + '<header><img src="' + estatico('logo.svg') + '"></header>'
         + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
             + (p[0] === activa ? ' class="on"' : '') + '>' + p[1] + '</a>').join('') + '</nav>' : '')
         + '<main>' + (volver ? '<a class="v" href="' + volver[0] + '?s=' + token + '">‹ ' + volver[1] + '</a>' : '')
@@ -309,19 +325,10 @@ function campoPin(nombre) {
     return '<input type="password" name="' + (nombre || 'pin') + '" size="10" inputmode="numeric" autocomplete="off">';
 }
 
-/**
- * La "V" del logo, dibujada en vectores. Va SÓLO aquí: la hoja de estilos está a 1876
- * bytes de los 1900 que nos permitimos, así que no cabe como imagen de fondo, y un
- * fichero aparte sería una petición más (1,15 s cada una en este equipo). Dibujada
- * pesa ~200 bytes y viaja dentro de la propia página.
- */
-const MARCA = '<svg viewBox="0 0 100 86" width="64" height="55">'
-    + '<path fill="#c1122f" d="M3 4h24l36 78q-16 5-22-6L3 4z"/>'
-    + '<path fill="#3a4048" d="M97 4H73L52 46l11 24z"/></svg>';
-
 function paginaLogin(msg) {
     return documento('Administración', null, null, '<div style="max-width:420px;margin:0 auto">'
-        + mensajeHtml(msg) + '<p style="text-align:center;margin:10px 0">' + MARCA + '</p>'
+        // El logo ya está en la cabecera: repetirlo aquí sobraba.
+        + mensajeHtml(msg)
         + panel('Entrar', '<form method="post" action="entrar">'
         + campo('PIN de administrador', '<input type="password" name="pin" inputmode="numeric" autofocus>')
         + '<p><button class="p">Entrar</button></p><p class="k">Es el mismo PIN que en Ajustes del panel de la impresora.</p></form>') + '</div>');
@@ -1000,6 +1007,7 @@ export function atenderRuta(p, ahora) {
     const js = 'text/javascript; charset=utf-8';
     const estaticos = {
         '/estilo.css': ['text/css; charset=utf-8', () => ESTILO],
+        '/logo.svg': ['image/svg+xml; charset=utf-8', () => LOGO],
         '/subir.js': [js, () => SUBIR_JS], '/copia-bajar.js': [js, () => COPIA_BAJAR_JS],
         '/copia-subir.js': [js, () => SUBIR_JS + ';' + COPIA_SUBIR_JS], '/contadores.js': [js, () => CONTADORES_JS],
         '/lista.js': [js, () => LISTA_JS], '/csv.js': [js, () => CSV_JS],
