@@ -190,8 +190,8 @@ function sesionValida(token, ahora) {
  */
 const ESTILO = '*{box-sizing:border-box}'
     + 'body{margin:0;font:15px/1.4 arial,tahoma,sans-serif;background:#f4f4f4;color:#333}'
-    + 'header{background:#fff;padding:12px 16px;border-bottom:4px double #b03}'
-    + 'header b{color:#b03;font-size:19px}'
+    + 'header{background:#3a4048;padding:13px 16px;border-bottom:4px solid #b03}'
+    + 'header b{color:#fff;font-size:23px;letter-spacing:1px}'
     + 'nav{display:flex;overflow-x:auto;background:#eee;border-bottom:1px solid #bbb}'
     + 'nav a{padding:11px 16px;color:#333;font-weight:600;text-decoration:none;white-space:nowrap}'
     + 'nav a.on{background:#b03;color:#fff}nav a:last-child{margin-left:auto}'
@@ -271,7 +271,10 @@ function documento(titulo, token, activa, cuerpo, volver) {
         + (token ? '<nav>' + PESTANAS.map((p) => '<a href="' + p[0] + '?s=' + token + '"'
             + (p[0] === activa ? ' class="on"' : '') + '>' + p[1] + '</a>').join('') + '</nav>' : '')
         + '<main>' + (volver ? '<a class="v" href="' + volver[0] + '?s=' + token + '">‹ ' + volver[1] + '</a>' : '')
-        + '<h1>' + escapar(titulo) + '</h1>' + cuerpo + '</main></body></html>';
+        // Sin sesión (la pantalla de acceso) todo va centrado: el título suelto a la
+        // izquierda con la caja en el medio queda descolgado.
+        + '<h1' + (token ? '>' : ' style="text-align:center">') + escapar(titulo) + '</h1>'
+        + cuerpo + '</main></body></html>';
 }
 
 /** Un panel con cabecera roja. */
@@ -317,8 +320,8 @@ const MARCA = '<svg viewBox="0 0 100 86" width="64" height="55">'
     + '<path fill="#3a4048" d="M97 4H73L52 46l11 24z"/></svg>';
 
 function paginaLogin(msg) {
-    return documento('Administración', null, null, mensajeHtml(msg) + '<div style="max-width:420px">'
-        + '<p style="text-align:center;margin:4px 0 10px">' + MARCA + '</p>'
+    return documento('Administración', null, null, '<div style="max-width:420px;margin:0 auto">'
+        + mensajeHtml(msg) + '<p style="text-align:center;margin:10px 0">' + MARCA + '</p>'
         + panel('Entrar', '<form method="post" action="entrar">'
         + campo('PIN de administrador', '<input type="password" name="pin" inputmode="numeric" autofocus>')
         + '<p><button class="p">Entrar</button></p><p class="k">Es el mismo PIN que en Ajustes del panel de la impresora.</p></form>') + '</div>');
