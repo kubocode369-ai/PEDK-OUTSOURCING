@@ -355,6 +355,25 @@ hablar(); console.log('· Historial'); silenciar();
     check('lo contado se recuerda tras reiniciar la app', historial.revisar(() => {}) === 0);
     silenciar();
 
+    /*
+     * LO QUE PASÓ DE VERDAD el 25-09-2026: el trabajo #290 se contó dos veces con
+     * nueve minutos de diferencia, sin reiniciar la app. La clave era `id|hora`, así
+     * que al equipo le bastó con devolver la MISMA entrada con otra hora para que
+     * pareciera un trabajo nuevo. Ahora manda el número.
+     */
+    const contados = [];
+    mock.imprimir({ tipo: 'PRINT', paginas: 2, hora: '2026-09-25 22:29:00' });
+    historial.revisar((e) => contados.push(e.id));
+    const idRepetido = contados[contados.length - 1];
+    mock.imprimir({ tipo: 'PRINT', paginas: 2, id: idRepetido, hora: '2026-09-25 22:38:00' });
+    const otra = historial.revisar((e) => contados.push(e.id));
+    hablar();
+    check('el mismo trabajo con otra hora NO se cuenta dos veces', otra === 0
+        && contados.filter((x) => x === idRepetido).length === 1, contados.join(','));
+    check('y el techo de lo contado sube solo', store.maxContado() >= Number(idRepetido),
+        store.maxContado() + ' vs ' + idRepetido);
+    silenciar();
+
     // Los escaneos van a su propio contador: no ensucian las impresiones (que es lo que
     // se factura) ni el total de papel.
     equipo();
@@ -1936,6 +1955,14 @@ hablar(); console.log('· Lo que el equipo cuenta por su cuenta (canal de estado
         mock.textos());
     silenciar();
     mock.copiaAvisa('JBSts_Finish');
+
+    // El equipo devuelve 'EINVALIDPARAM' en vez de una lista: no se recorre letra a
+    // letra (el panel llegó a enseñar "WARNING: E,I,N,V,A,L,I,D,P,A,R,A,M").
+    mock.pedk.device.status.getStatusIdList = () => 'EINVALIDPARAM';
+    hablar();
+    check('un error en vez de lista no se parte en letras',
+        !estados.informe().some((l) => /E,I,N/.test(l)), estados.informe().join(' | '));
+    silenciar();
 
     // Un firmware sin canal de estados: ni se engancha ni estorba.
     equipo({ trabajos: true, sinEstados: true });

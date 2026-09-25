@@ -537,7 +537,7 @@ function alTrabajo(e) {
     }
     const quien = sesion.quienUsa();
     store.contar(quien, e);
-    console.log('[cuenta] #' + e.id + ' ' + e.tipo + ' ' + e.paginas + ' pág. -> ' + quien
+    console.log('[cuenta] #' + e.id + (e.hora ? '@' + e.hora : '') + ' ' + e.tipo + ' ' + e.paginas + ' pág. -> ' + quien
         + (e.estado ? ' (' + e.estado + ')' : '') + ' · equipo: ' + (e.origen || 'sin usuario'));
     if (quien === store.SIN_SESION) {
         if (diagnostico.pruebaActiva()) {

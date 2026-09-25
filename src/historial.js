@@ -154,6 +154,9 @@ export function revisar(alNuevo) {
         }
         try {
             alNuevo(e);
+            // Se anota DESPUÉS de contarlo: si contar fallara, el trabajo sigue
+            // pendiente y no se pierde.
+            store.anotarContado(e.id);
             entregados++;
         } catch (err) {
             console.log('[historial] error al contar ' + e.clave + ': ' + (err && err.message));

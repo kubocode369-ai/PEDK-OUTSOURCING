@@ -196,10 +196,21 @@ export function informe() {
         for (const tipo of ['STATUS_ID_TYPE_ERROR', 'STATUS_ID_TYPE_WARNING']) {
             try {
                 const lista = s.getStatusIdList((s.STATUS_TYPE && s.STATUS_TYPE[tipo]) || tipo);
-                const n = lista && lista.length ? Array.prototype.slice.call(lista) : [];
-                if (n.length) {
+                /*
+                 * OJO: este firmware devuelve el TEXTO 'EINVALIDPARAM' en vez de una
+                 * lista (visto en el panel el 25-09-2026, que enseñaba
+                 * "WARNING: E,I,N,V,A,L,I,D,P,A,R,A,M" porque se recorría letra a
+                 * letra). Sólo se acepta un array de verdad.
+                 */
+                if (!Array.isArray(lista)) {
+                    if (lista !== undefined && lista !== null && String(lista) !== '') {
+                        out.push(tipo.replace('STATUS_ID_TYPE_', '') + ': ' + String(lista).slice(0, 30));
+                    }
+                    continue;
+                }
+                if (lista.length) {
                     out.push(tipo.replace('STATUS_ID_TYPE_', '') + ': '
-                        + n.map((x) => String(x).replace('PEDK_SID_', '')).join(',').slice(0, 44));
+                        + lista.map((x) => String(x).replace('PEDK_SID_', '')).join(',').slice(0, 44));
                 }
             } catch (e) { /* no todos los firmwares traen la lista */ }
         }

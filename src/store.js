@@ -59,6 +59,12 @@ function vacio() {
          * anterior a la app). Ver marcarVistos.
          */
         pisoVisto: 0,
+        /**
+         * Número de trabajo más alto ya contado. Es la red contra contar dos veces
+         * cuando el equipo cambia la hora de una entrada del historial (medido el
+         * 25-09-2026: el #290 se contó dos veces). Ver yaVisto.
+         */
+        maxContado: 0,
         /** false hasta la primera lectura del historial: lo anterior no se cuenta. */
         historialIniciado: false,
         ajustes: {
@@ -232,6 +238,7 @@ function normalizar(d) {
     base.registro = Array.isArray(d.registro) ? d.registro : [];
     base.vistos = Array.isArray(d.vistos) ? d.vistos : [];
     base.pisoVisto = Number(d.pisoVisto) > 0 ? Number(d.pisoVisto) : 0;
+    base.maxContado = Number(d.maxContado) > 0 ? Number(d.maxContado) : 0;
     base.historialIniciado = !!d.historialIniciado;
     if (d.ajustes && typeof d.ajustes === 'object') {
         const a = d.ajustes;
@@ -967,7 +974,41 @@ function idDe(clave) {
 export function yaVisto(clave) {
     const d = cargar();
     const id = idDe(clave);
-    return (!Number.isNaN(id) && id <= d.pisoVisto) || d.vistos.indexOf(String(clave)) >= 0;
+    /*
+     * El NÚMERO manda sobre la clave completa.
+     *
+     * MEDIDO el 25-09-2026: el trabajo #290 se contó DOS VECES con nueve minutos de
+     * diferencia, sin reiniciar la app y sin restaurar nada. La clave era `id|hora`, o
+     * sea que basta con que el equipo reescriba la hora de una entrada (o cree un
+     * segundo registro con el mismo número) para que parezca otro trabajo. Los números
+     * sólo crecen, así que lo ya contado se decide por número y punto.
+     */
+    if (!Number.isNaN(id) && (id <= d.pisoVisto || id <= d.maxContado)) {
+        return true;
+    }
+    return d.vistos.indexOf(String(clave)) >= 0;
+}
+
+/** El número de trabajo más alto que ya se contó. Sólo sube. */
+export function maxContado() {
+    return cargar().maxContado;
+}
+
+/**
+ * Anota que este trabajo ya se contó. Se llama con el trabajo entregado, no con lo
+ * leído: lo que no se cuenta (un escaneo antiguo, un tipo que no nos interesa) no
+ * tiene por qué subir el techo.
+ */
+export function anotarContado(id) {
+    const n = parseInt(String(id), 10);
+    if (Number.isNaN(n)) {
+        return;
+    }
+    const d = cargar();
+    if (n > d.maxContado) {
+        d.maxContado = n;
+        guardar();
+    }
 }
 
 /**
