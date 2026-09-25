@@ -1,7 +1,13 @@
 /**
  * Panel de administración servido por la PROPIA impresora, como la web de Pantum:
  *
- *     http://<ip>/pedk/app_notify/vizo
+ *     http://<ip>/pedk/app_notify/vizo/   (LA BARRA FINAL ES OBLIGATORIA)
+ *
+ * Medido el 25-09-2026 al renombrar la app a "vizo": SIN la barra final el firmware
+ * contesta él mismo "app name is not find!!!" aunque la app esté corriendo y haya
+ * registrado su web (en el log: `start app[vizo]` y `[web] activa en …`). Con la
+ * barra funciona todo. Con el nombre anterior ("impresion") no hacía falta, así que
+ * parece depender del nombre; no se ha aislado por qué.
  *
  * Medido el 21-09-2026: el firmware llama a `pedk.net.http.receiveData` con cada
  * petición cuya ruta empieza por /pedk/app_notify/<nombre de la app> (el `name` del

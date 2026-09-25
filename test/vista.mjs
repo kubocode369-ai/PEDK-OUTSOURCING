@@ -1,5 +1,5 @@
 // Vista previa del panel web con datos de ejemplo, SIN impresora: npm test (genera .build/)
-// y luego  node test/vista.mjs  -> http://localhost:8123/pedk/app_notify/vizo (PIN 2580).
+// y luego  node test/vista.mjs  -> http://localhost:8123/pedk/app_notify/vizo/ (PIN 2580).
 import http from 'http';
 import { makePedk } from './mock-pedk.mjs';
 globalThis.pedk = makePedk({ retencion: { KuboC: [] } }).pedk;

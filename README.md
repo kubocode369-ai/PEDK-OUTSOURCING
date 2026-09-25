@@ -88,7 +88,7 @@ apagar la impresión de red bloquea también la impresión segura.
 La impresora sirve la administración en:
 
 ```
-http://<IP de la impresora>/pedk/app_notify/vizo
+http://<IP de la impresora>/pedk/app_notify/vizo/
 ```
 
 El tramo `/pedk/app_notify/` lo pone el firmware y no se puede quitar; lo que sigue es el
@@ -125,7 +125,7 @@ fallos se frena 5 minutos; la sesión caduca a los 15 minutos sin uso.
 **Diseño**: colores y paneles de la web de Pantum del equipo (rojo `#BB0033`, cabeceras
 rojas, borde gris), sin su logotipo. Responsive: en el móvil las pestañas se deslizan,
 cada usuario es una tarjeta y las tablas se desplazan dentro de su panel. Para verlo sin
-impresora: `npm test` y luego `node test/vista.mjs` → `http://localhost:8123/pedk/app_notify/vizo` (PIN `2580`).
+impresora: `npm test` y luego `node test/vista.mjs` → `http://localhost:8123/pedk/app_notify/vizo/` (PIN `2580`).
 
 ## Cuántos usuarios
 

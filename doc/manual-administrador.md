@@ -4,11 +4,14 @@ Todo se administra desde una página web que **sirve la propia impresora**. No h
 servidor, ni instalar nada en ningún PC, ni internet.
 
 ```
-http://<IP de la impresora>/pedk/app_notify/vizo
+http://<IP de la impresora>/pedk/app_notify/vizo/
 ```
 
 Entra con el **PIN de administrador**. De fábrica es **2580** y es lo primero que hay que
 cambiar.
+
+> ⚠️ **La barra del final es obligatoria.** Sin ella la impresora contesta "app name
+> is not find!!!" aunque la aplicación esté funcionando.
 
 > **Reserva la IP de la impresora en el router.** Si cambia, la dirección deja de
 > funcionar y hay que buscarla otra vez en el panel del equipo.
