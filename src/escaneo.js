@@ -30,8 +30,22 @@ const FORMATOS = [
     { valor: 1, nombre: 'PDF' },
     { valor: 0, nombre: 'JPEG' },
 ];
-/** Blanco y negro: este equipo no tiene color (`Color: false`), no hay nada que elegir. */
-const COLOR_BN = 1;
+/**
+ * Cómo se lee la hoja. Los números son del SDK: 1 blanco y negro, 2 grises, 3 color.
+ *
+ * OJO con el `Color: false` que devuelve `getSystemCapabilitiesList`: eso es que el
+ * equipo no IMPRIME en color (es una láser monocromo), pero el ESCÁNER sí lee color
+ * —el propio Asistente de Escaneado de Pantum lo hace—. Por creer lo contrario, esta
+ * pantalla escaneó en blanco y negro hasta el 25-09-2026.
+ *
+ * De fábrica queda en blanco y negro: un documento normal sale igual de legible y el
+ * fichero pesa mucho menos, que importa cuando va por correo.
+ */
+const COLORES = [
+    { valor: 1, nombre: 'B/N' },
+    { valor: 2, nombre: 'Grises' },
+    { valor: 3, nombre: 'Color' },
+];
 /** 200 ppp (0:75, 1:150, 2:200, 3:300, 4:600, 5:1200): de sobra para papeles, y rápido. */
 const RESOLUCION = 2;
 /** Cuánto se espera a que el equipo cierre el trabajo antes de volver a ofrecer TERMINAR. */
@@ -42,6 +56,7 @@ let quien = '';
 let destinos = [];
 let iDestino = 0;
 let iFormato = 0;
+let iColor = 0;
 let trabajo = null;
 /** true cuando la cancelación la pidió la persona, para no confundirla con la del equipo. */
 let canceladoPorNosotros = false;
@@ -251,7 +266,7 @@ function escanear() {
     // ser justo lo que le falta para no cancelar el trabajo.
     ponerParametro(param, 'SCAN_PARAM_MODE', 'ScanMode', 0);
     ponerParametro(param, 'SCAN_PARAM_RESOLUTION', 'Resolution', RESOLUCION);
-    ponerParametro(param, 'SCAN_PARAM_COLORTYPE', 'ColorType', COLOR_BN);
+    ponerParametro(param, 'SCAN_PARAM_COLORTYPE', 'ColorType', COLORES[iColor].valor);
     ponerParametro(param, 'SCAN_PARAM_FILEFMTTYPE', 'FileFmtType', FORMATOS[iFormato].valor);
     ponerParametro(param, 'SCAN_PARAM_AUTODUPLEX', 'AutoDuplex', false);
     if (!ponerDestino(param, destino)) {
@@ -289,7 +304,8 @@ function escanear() {
     } catch (e) {
         r = 'lanzó ' + String((e && e.message) || e).slice(0, 40);
     }
-    console.log('[escaneo] start(' + destino.tipo + ', ' + FORMATOS[iFormato].nombre + ') -> ' + r);
+    console.log('[escaneo] start(' + destino.tipo + ', ' + FORMATOS[iFormato].nombre
+        + ', ' + COLORES[iColor].nombre + ') -> ' + r);
     if (r !== 0) {
         soltar();
         // 3 es permiso denegado y 4 escáner ocupado, según el SDK.
@@ -388,9 +404,13 @@ function render() {
         w.push(etiqueta('destino1', 150, 74, 300, 24, destinos.length ? destinos[0].nombre : '—', COLOR.texto));
     }
 
-    w.push(etiqueta('lf', 24, 134, 120, 24, 'Formato', COLOR.texto));
-    w.push(boton('formato', 150, 124, 212, 40, FORMATOS[iFormato].nombre, COLOR.acento, () => {
+    w.push(etiqueta('lf', 24, 134, 110, 24, 'Cómo', COLOR.texto));
+    w.push(boton('formato', 140, 124, 104, 40, FORMATOS[iFormato].nombre, COLOR.acento, () => {
         iFormato = (iFormato + 1) % FORMATOS.length;
+        repintar();
+    }));
+    w.push(boton('color', 252, 124, 110, 40, COLORES[iColor].nombre, COLOR.acento, () => {
+        iColor = (iColor + 1) % COLORES.length;
         repintar();
     }));
 
@@ -423,6 +443,7 @@ export function abrirEscaneo(usuario, volver) {
         destinos = destinosDe(quien);
         iDestino = 0;
         iFormato = 0;
+        iColor = 0;
         decir('', COLOR.suave);
     }
     mostrar('escaneo', render);

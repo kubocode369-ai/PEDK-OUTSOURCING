@@ -1799,8 +1799,8 @@ hablar(); console.log('· Escanear desde la app'); silenciar();
     mock.pulsar('escanear');
     const e1 = mock.arrancados[mock.arrancados.length - 1];
     hablar();
-    check('arranca el escaneo a USB en PDF', !!e1 && e1.tipo === 'SCAN_TO_USB'
-        && e1.param.SCAN_PARAM_FILEFMTTYPE === 1, JSON.stringify(e1));
+    check('arranca el escaneo a USB en PDF y blanco y negro', !!e1 && e1.tipo === 'SCAN_TO_USB'
+        && e1.param.SCAN_PARAM_FILEFMTTYPE === 1 && e1.param.SCAN_PARAM_COLORTYPE === 1, JSON.stringify(e1));
     check('y la pantalla lo dice', /Escaneando/.test(mock.textos()), mock.textos());
     silenciar();
     mock.copiaAvisa('JBSts_Finish');
@@ -1869,6 +1869,35 @@ hablar(); console.log('· Escanear desde la app'); silenciar();
     check('TERMINAR cierra el trabajo y avisa de dónde quedó',
         mock.seguidos.join() === 'continue,finish' && /Listo: memoria usb/.test(mock.textos()), mock.textos());
     silenciar();
+
+    /*
+     * El escáner LEE EN COLOR aunque la impresora sólo imprima en negro: el
+     * `Color: false` de las capacidades es de la impresión. Hasta el 25-09-2026 esta
+     * pantalla escaneaba todo en blanco y negro por creer lo contrario.
+     */
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('color');
+    mock.pulsar('color');
+    hablar();
+    check('se puede elegir color', /Color/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('escanear');
+    const eColor = mock.arrancados[mock.arrancados.length - 1];
+    hablar();
+    check('y el escaneo sale en color (ColorType 3)', eColor.param.SCAN_PARAM_COLORTYPE === 3,
+        JSON.stringify(eColor.param));
+    silenciar();
+    mock.pulsar('terminar');
+    mock.copiaAvisa('JBSts_Finish');
+    escaneo.abrirEscaneo('ana', () => {});
+    mock.pulsar('escanear');
+    const eBn = mock.arrancados[mock.arrancados.length - 1];
+    hablar();
+    check('al abrir de nuevo vuelve a blanco y negro (ficheros pequeños)',
+        eBn.param.SCAN_PARAM_COLORTYPE === 1, JSON.stringify(eBn.param));
+    silenciar();
+    mock.pulsar('terminar');
+    mock.copiaAvisa('JBSts_Finish');
 
     // Mientras el equipo guarda no debe haber botones que invitar a pulsar dos veces:
     // el 25-09-2026 `finish()` tardó ~50 s y la persona lo pulsó tres veces.
