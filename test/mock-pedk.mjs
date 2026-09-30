@@ -86,6 +86,11 @@ export function makePedk(opts = {}) {
     const rechaza = new Set(opts.rechaza || []);      // lanza EOPNOTSUPP
 
     const setting = {
+        // Medido el 30-09-2026: devuelve la serie de la etiqueta como string.
+        ProductInfo: class {
+            getProductName() { return 'Pantum BM5220ADW Series'; }
+            getProductSerialNumber() { return opts.serie !== undefined ? opts.serie : 'CV3DV0004X'; }
+        },
         FUNCTION_TYPE,
         FUNCTION_SWITCH: { FUNC_SW_ON: 'FUNC_SW_ON', FUNC_SW_OFF: 'FUNC_SW_OFF' },
         getFunctionSwitch: (k) => {

@@ -101,7 +101,9 @@ function renderMenu() {
     })));
     w.push(boton('abrir', col(1), fila(4), W, H, 'Desbloquear equipo', COLOR.peligro, desbloquearTodo));
 
-    const aviso = store.pinAdminDeFabrica() ? 'PIN de admin de fábrica: cámbielo' : estadoCerradura();
+    const aviso = !store.pinAdminDeFabrica() ? estadoCerradura()
+        : store.pinRestablecido() ? 'PIN restablecido por Soprint el ' + store.pinRestablecido().slice(0, 10) + ': cámbielo'
+            : 'PIN de admin de fábrica: cámbielo';
     w.push(etiqueta('st', 12, 270, 456, 20, recortar(aviso, 62),
         store.pinAdminDeFabrica() ? COLOR.aviso : COLOR.tenue));
     w.push(etiqueta('msg', 12, 292, 456, 24, recortar(mensaje, 62), colorMensaje));

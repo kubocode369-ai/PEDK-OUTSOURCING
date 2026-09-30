@@ -88,6 +88,8 @@ function vacio() {
             carpetaEscaneo: null,
             minutosSesion: config.MINUTOS_SESION_DEFECTO,
             huellaAdmin: null,
+            /** 'AAAA-MM-DD hh:mm' del último restablecimiento del PIN de admin por Soprint. */
+            pinRestablecido: null,
         },
     };
 }
@@ -251,6 +253,7 @@ function normalizar(d) {
             base.ajustes.minutosSesion = a.minutosSesion;
         }
         base.ajustes.huellaAdmin = a.huellaAdmin || null;
+        base.ajustes.pinRestablecido = typeof a.pinRestablecido === 'string' ? a.pinRestablecido.slice(0, 16) : null;
     }
     return base;
 }
@@ -627,6 +630,23 @@ export function cambiarPinAdmin(pin) {
 
 export function pinAdminDeFabrica() {
     return !cargar().ajustes.huellaAdmin;
+}
+
+/**
+ * El PIN de admin vuelve al de fábrica (rescate.js, con el código de Soprint). Sólo
+ * eso: usuarios, contadores y demás ajustes no se tocan. Queda la fecha, para que el
+ * administrador vea en Ajustes que se hizo.
+ */
+export function restablecerPinAdmin() {
+    const a = cargar().ajustes;
+    a.huellaAdmin = null;
+    a.pinRestablecido = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    guardar();
+}
+
+/** Fecha del último restablecimiento por Soprint, o null. */
+export function pinRestablecido() {
+    return cargar().ajustes.pinRestablecido || null;
 }
 
 /* ------------------------------------------------------------------ */

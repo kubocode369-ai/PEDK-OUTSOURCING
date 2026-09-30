@@ -17,7 +17,7 @@ const build = join(aqui, '.build');
 mkdirSync(build, { recursive: true });
 for (const f of readdirSync(join(aqui, '..', 'src'))) {
     if (!f.endsWith('.js')) continue;
-    const src = readFileSync(join(aqui, '..', 'src', f), 'utf8').replace(/from '\.\/([a-zA-Z]+)\.js'/g, "from './$1.mjs'");
+    const src = readFileSync(join(aqui, '..', 'src', f), 'utf8').replace(/from '\.\/([a-zA-Z0-9]+)\.js'/g, "from './$1.mjs'");
     writeFileSync(join(build, basename(f, '.js') + '.mjs'), src);
 }
 
@@ -750,6 +750,25 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     mock.pulsar('cancelar');
 
     mock.pulsar('ajustes');
+    hablar();
+    check('sin clave de Soprint no hay "¿Olvidó el PIN?"', !/Olvidó/.test(mock.textos()), mock.textos());
+    silenciar();
+    globalThis.__CLAVE_RESCATE__ = 'f'.repeat(64);
+    mock.pulsar('volver');
+    mock.pulsar('ajustes');
+    hablar();
+    check('con clave, el PIN de admin ofrece "¿Olvidó el PIN?"', /Olvidó el PIN/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('olvido');
+    hablar();
+    check('que lleva a la pantalla de Soprint con la serie', /Llame a Soprint/.test(mock.textos())
+        && /CV3DV0004X/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('volver');
+    hablar();
+    check('y Volver regresa al PIN de admin', /PIN de administrador/.test(mock.textos()), mock.textos());
+    silenciar();
+    delete globalThis.__CLAVE_RESCATE__;
     teclear(config.PIN_ADMIN_FABRICA);
     mock.pulsar('OK');
     hablar();
@@ -1998,6 +2017,109 @@ hablar(); console.log('· Lo que el equipo cuenta por su cuenta (canal de estado
     hablar();
     check('sin canal de estados no se rompe nada', estados.disponible() === false
         && estados.informe().some((l) => /NO existe/.test(l)), estados.informe().join(' | '));
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
+hablar(); console.log('· Restablecer el PIN de admin (código de Soprint)'); silenciar();
+{
+    const { createHash, createHmac } = await import('crypto');
+    const sha = await import('./.build/sha256.mjs');
+    const rescate = await import('./.build/rescate.mjs');
+    const { codigo } = await import('../herramientas/codigo-pin-admin.mjs');
+    const CLAVE = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+    hablar();
+    const textos = ['', 'abc', 'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(64), 'x'.repeat(200)];
+    check('el SHA-256 de la app da lo mismo que el de Node',
+        textos.every((t) => sha.hex(sha.sha256(sha.bytesDe(t))) === createHash('sha256').update(t, 'latin1').digest('hex')));
+    check('y el HMAC también (clave corta y clave de más de 64 bytes)',
+        [CLAVE, 'k'.repeat(100)].every((k) => sha.hex(sha.hmacSha256(sha.bytesDe(k), sha.bytesDe('vizo|X|1')))
+            === createHmac('sha256', Buffer.from(k, 'latin1')).update('vizo|X|1', 'latin1').digest('hex')));
+    const muestras = [['CV3DV0004X', '482173'], ['cv3dv0004x', '100000'], ['AB12', '999999']];
+    check('la app y la herramienta de Soprint calculan el mismo código',
+        muestras.every(([s, q]) => rescate.respuesta(CLAVE, s, q) === codigo(CLAVE, s, q)),
+        muestras.map(([s, q]) => rescate.respuesta(CLAVE, s, q) + '/' + codigo(CLAVE, s, q)).join(' '));
+    check('el código tiene 6 cifras', /^\d{6}$/.test(rescate.respuesta(CLAVE, 'CV3DV0004X', '482173')));
+    const gen = await import('../herramientas/hacer-generador.mjs');
+    const respuestaPagina = new Function(gen.scriptCalculo() + '\nreturn respuesta;')();
+    check('la página del generador calcula lo mismo que la app',
+        muestras.every(([s, q]) => respuestaPagina(CLAVE, s, q) === codigo(CLAVE, s, q)));
+    check('y lleva la clave dentro', gen.construir(CLAVE).indexOf(JSON.stringify(CLAVE)) >= 0);
+    check('otra serie u otra solicitud dan otro código',
+        rescate.respuesta(CLAVE, 'CV3DV0004X', '482173') !== rescate.respuesta(CLAVE, 'CV3DV0004Y', '482173')
+        && rescate.respuesta(CLAVE, 'CV3DV0004X', '482173') !== rescate.respuesta(CLAVE, 'CV3DV0004X', '482174'));
+    silenciar();
+
+    delete globalThis.__CLAVE_RESCATE__;
+    equipo();
+    hablar();
+    check('sin clave compilada no se ofrece', rescate.disponible() === false);
+    check('y ningún código entra', rescate.comprobar('000000').ok === false);
+    silenciar();
+
+    globalThis.__CLAVE_RESCATE__ = CLAVE;
+    equipo();
+    store.cambiarPinAdmin('7777');
+    store.agregarUsuario('ana', '4321');
+    store.contar('ana', { tipo: 'PRINT', paginas: 3 });
+    const antes = JSON.stringify({ u: store.usuarios(), c: store.contadores() });
+    let aviso = 'no volvió';
+    rescate.abrirRescate((a) => { aviso = a; });
+    const sol = rescate.solicitud();
+    hablar();
+    check('la pantalla da la serie del equipo y la solicitud', /CV3DV0004X/.test(mock.textos())
+        && mock.textos().indexOf(sol.slice(0, 3) + ' ' + sol.slice(3)) >= 0, mock.textos());
+    check('la solicitud es de 6 cifras', /^[1-9]\d{5}$/.test(sol), sol);
+    silenciar();
+
+    const malo = rescate.respuesta(CLAVE, 'CV3DV0004X', sol) === '123456' ? '654321' : '123456';
+    malo.split('').forEach((c) => mock.pulsar(c));
+    mock.pulsar('OK');
+    hablar();
+    check('un código malo no entra y lo dice', /incorrecto/.test(mock.textos()) && store.esPinAdmin('7777'), mock.textos());
+    check('la solicitud no cambia por un fallo', rescate.solicitud() === sol);
+    silenciar();
+
+    const bueno = codigo(CLAVE, 'CV3DV0004X', sol);
+    bueno.split('').forEach((c) => mock.pulsar(c));
+    mock.pulsar('OK');
+    hablar();
+    check('con el código de Soprint el PIN de admin vuelve al de fábrica',
+        store.esPinAdmin(config.PIN_ADMIN_FABRICA) && !store.esPinAdmin('7777'));
+    check('y vuelve a la pantalla del PIN avisándolo', /restablecido/.test(String(aviso)), aviso);
+    check('usuarios y contadores siguen igual', JSON.stringify({ u: store.usuarios(), c: store.contadores() }) === antes);
+    check('queda la fecha para Ajustes', /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(String(store.pinRestablecido())), store.pinRestablecido());
+    check('el mismo código ya no vale: la solicitud cambió',
+        rescate.solicitud() !== sol && rescate.comprobar(bueno).ok === false);
+    silenciar();
+
+    // Cinco fallos: la solicitud se anula y hay que esperar, aunque luego se acierte.
+    store.cambiarPinAdmin('7777');
+    const sol2 = rescate.solicitud();
+    const t0 = 1e12;
+    for (let i = 0; i < config.INTENTOS_MAX; i++) {
+        rescate.comprobar(rescate.respuesta(CLAVE, 'CV3DV0004X', sol2) === '000000' ? '111111' : '000000', t0);
+    }
+    const tras = rescate.solicitud();
+    hablar();
+    check('tras cinco fallos la solicitud se anula', tras !== sol2);
+    check('y mientras dura la espera ni el código bueno entra',
+        rescate.comprobar(codigo(CLAVE, 'CV3DV0004X', tras), t0 + 1000).ok === false && store.esPinAdmin('7777'));
+    check('pasada la espera, el código de la nueva solicitud sí',
+        rescate.comprobar(codigo(CLAVE, 'CV3DV0004X', tras), t0 + config.BLOQUEO_INTENTOS_MS + 1).ok === true);
+    silenciar();
+
+    // Sobrevive a guardar y releer, y a una copia de seguridad.
+    store._recargar();
+    hablar();
+    check('la fecha del restablecimiento se guarda', !!store.pinRestablecido());
+    silenciar();
+
+    // Un firmware que no da la serie: se enseña "?" y la cuenta sigue funcionando.
+    equipo({ serie: 'EINVALIDPARAM' });
+    hablar();
+    check('sin serie legible se enseña "?"', rescate.serie() === '?');
     silenciar();
 }
 

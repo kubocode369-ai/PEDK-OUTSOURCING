@@ -33,6 +33,7 @@ import * as acciones from './acciones.js';
 import * as copia from './copia.js';
 import * as escaneo from './escaneo.js';
 import * as estados from './estados.js';
+import * as rescate from './rescate.js';
 import { abrirAjustes } from './ajustes.js';
 
 const { ScreenCtrl, KeyCtrl } = pedk.ui;
@@ -218,6 +219,16 @@ function renderPin() {
             mostrar('usuario', renderUsuario);
         }
     }));
+    // Sólo en el panel, nunca en la web: para restablecerlo hay que llamar a Soprint.
+    if (pinParaAdmin && rescate.disponible()) {
+        w.push(boton('olvido', 316, 282, 152, 32, '¿Olvidó el PIN?', COLOR.suave, () => {
+            pinEscrito = '';
+            rescate.abrirRescate((aviso) => {
+                decir(aviso || '', aviso ? COLOR.ok : COLOR.suave);
+                mostrar('pin', renderPin);
+            });
+        }));
+    }
     return w;
 }
 

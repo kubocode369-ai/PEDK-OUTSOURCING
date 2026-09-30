@@ -508,11 +508,49 @@ function interruptoresEscaneo(out) {
 }
 
 /**
+ * Quién es el equipo: nombre y número de serie, para atar a la máquina el código de
+ * restablecimiento del PIN de admin. Sólo se LEE. Devuelve String o un ERROR_NO.
+ */
+function identidad(out) {
+    const s = globalThis.pedk && pedk.device && pedk.device.setting;
+    if (!s || typeof s.ProductInfo !== 'function') {
+        out.push('ProductInfo: NO existe');
+        log('ProductInfo', 'no existe');
+        return;
+    }
+    let p = null;
+    try {
+        p = new s.ProductInfo();
+    } catch (e) {
+        out.push('ProductInfo: LANZÓ ' + String((e && e.message) || e).slice(0, 30));
+        return;
+    }
+    log('ProductInfo', nombres(Object.getPrototypeOf(p)).join(','));
+    const leer = (metodo) => {
+        if (typeof p[metodo] !== 'function') {
+            return 'no existe';
+        }
+        try {
+            const v = p[metodo]();
+            return typeof v + ' ' + JSON.stringify(v);
+        } catch (e) {
+            return 'LANZÓ ' + String((e && e.message) || e).slice(0, 30);
+        }
+    };
+    const nombre = leer('getProductName');
+    const serie = leer('getProductSerialNumber');
+    log('identidad', 'nombre ' + nombre + ' · serie ' + serie);
+    out.push('Equipo: ' + nombre);
+    out.push('Serie: ' + serie);
+}
+
+/**
  * La medición de copia, escaneo y cuotas en una sola pulsación.
  * @returns {string[]} líneas cortas para el panel; el detalle va al log [explorar]
  */
 export function medirTrabajos() {
     const out = [];
+    identidad(out);
     capacidades(out);
     espacioDeTrabajos(out, 'copy', 'CopyJob', 'COPY_NORMAL', 'CopyParameterSet');
     espacioDeTrabajos(out, 'scan', 'ScanJob', 'SCAN_TO_USB', 'ScanParameterSet');

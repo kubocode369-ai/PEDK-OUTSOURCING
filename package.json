@@ -6,7 +6,7 @@
   "description": "Imprimir solo con usuario y PIN en el panel, y contar lo que imprime cada persona",
   "icon": "./resources/media/icon/app_icon.bmp",
   "scripts": {
-    "build": "vite build && pedk-build",
+    "build": "vite build && pedk-build && node herramientas/hacer-generador.mjs",
     "sign:dev": "pedk-sign --mode dev",
     "sign:prod": "pedk-sign --mode prod",
     "sign:hash": "pedk-sign --mode hash",
