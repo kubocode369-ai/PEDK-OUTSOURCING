@@ -77,6 +77,12 @@ function vacio() {
             /** Bloquear también el escaneo (panel y desde un PC) fuera de sesión. */
             bloquearEscaneo: false,
             /**
+             * Entrar sólo con el PIN, sin escribir el usuario. Apagado de fábrica. Con él
+             * encendido, el PIN de cada persona es de 4 dígitos y no se repite: la app
+             * reconoce a quién pertenece.
+             */
+            soloPin: false,
+            /**
              * La carpeta compartida a donde va lo que se escanea, con una subcarpeta por
              * persona. {servidor, ruta, usuario, clave, puerto}. Sin servidor, la opción
              * "Mi carpeta" no se le ofrece a nadie.
@@ -248,6 +254,7 @@ function normalizar(d) {
         base.ajustes.bloqueoActivo = !!a.bloqueoActivo;
         base.ajustes.bloquearCopia = !!a.bloquearCopia;
         base.ajustes.bloquearEscaneo = !!a.bloquearEscaneo;
+        base.ajustes.soloPin = !!a.soloPin;
         base.ajustes.carpetaEscaneo = normalizarCarpeta(a.carpetaEscaneo);
         if (config.MINUTOS_SESION_OPCIONES.indexOf(a.minutosSesion) >= 0) {
             base.ajustes.minutosSesion = a.minutosSesion;
@@ -527,6 +534,7 @@ export function restaurarTodo(copia) {
     const aj = d.ajustes;
     aj.bloquearCopia = a.bloquearCopia;
     aj.bloquearEscaneo = a.bloquearEscaneo;
+    aj.soloPin = a.soloPin;
     aj.carpetaEscaneo = a.carpetaEscaneo;
     aj.minutosSesion = a.minutosSesion;
     aj.huellaAdmin = a.huellaAdmin;
@@ -727,8 +735,9 @@ function crearUsuario(nombre, pin, datos) {
     if (cargar().usuarios.length >= config.USUARIOS_MAX) {
         return { ok: false, error: 'Máximo de ' + config.USUARIOS_MAX + ' usuarios alcanzado', lleno: true };
     }
-    if (!pinValido(pin)) {
-        return { ok: false, error: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos' };
+    const p = revisarPin(n, pin);
+    if (!p.ok) {
+        return p;
     }
     const v = validarDatos(datos);
     if (!v.ok) {
@@ -791,14 +800,86 @@ export function cambiarDatosUsuario(nombre, datos) {
 }
 
 export function cambiarPinUsuario(nombre, pin) {
+    return fijarPinUsuario(nombre, pin).ok;
+}
+
+/** Como cambiarPinUsuario, pero dice por qué no: {ok, error?}. */
+export function fijarPinUsuario(nombre, pin) {
     const u = buscar(nombre);
-    if (!u || !pinValido(pin)) {
-        return false;
+    if (!u) {
+        return { ok: false, error: 'No existe el usuario ' + normalizarUsuario(nombre) };
+    }
+    const p = revisarPin(u.nombre, pin);
+    if (!p.ok) {
+        return p;
     }
     u.huella = huella(u.nombre, pin);
     intentos.delete(u.nombre);
     guardar();
-    return true;
+    return { ok: true };
+}
+
+/*
+ * ENTRADA CON SÓLO PIN (ajuste soloPin). Las huellas llevan el nombre dentro, así que
+ * para saber de quién es un PIN se calcula con cada usuario y se compara: con 1000
+ * usuarios es instantáneo. No hay que convertir nada al encenderlo ni al apagarlo.
+ */
+
+/** Lo que se le pide a un PIN de persona, para enseñarlo en el panel y en la web. */
+export function reglaPin() {
+    return cargar().ajustes.soloPin ? config.PIN_SOLO + ' dígitos, distinto para cada persona'
+        : 'De ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos';
+}
+
+/** Los usuarios (salvo `excepto`) cuyo PIN es `pin`. */
+function duenosDelPin(pin, excepto) {
+    return cargar().usuarios.filter((u) => u.nombre !== excepto && u.huella === huella(u.nombre, pin));
+}
+
+/** ¿Vale este PIN para esta persona con los ajustes de ahora? {ok, error?} */
+function revisarPin(nombre, pin) {
+    if (!pinValido(pin)) {
+        return { ok: false, error: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos' };
+    }
+    if (!cargar().ajustes.soloPin) {
+        return { ok: true };
+    }
+    if (String(pin).length !== config.PIN_SOLO) {
+        return { ok: false, error: 'El PIN debe tener ' + config.PIN_SOLO + ' dígitos' };
+    }
+    if (duenosDelPin(pin, normalizarUsuario(nombre)).length) {
+        return { ok: false, error: 'Ese PIN ya lo tiene otra persona' };
+    }
+    return { ok: true };
+}
+
+/** La clave de los intentos fallidos con sólo PIN: no hay nombre, cuentan todos juntos. */
+const SOLO_PIN = '#solo-pin';
+
+/**
+ * ¿De quién es este PIN? Si lo tienen dos personas (PIN puestos antes de encender el
+ * ajuste) no entra ninguna: nunca se abre la sesión de otro.
+ * @returns {{ok: boolean, error?: string, usuario?: string}}
+ */
+export function validarPin(pin, ahora) {
+    const espera = esperaPorIntentos(SOLO_PIN, ahora);
+    if (espera > 0) {
+        return { ok: false, error: 'Demasiados intentos. Espere ' + espera + ' min' };
+    }
+    const duenos = pinValido(pin) ? duenosDelPin(pin, null) : [];
+    if (duenos.length === 0) {
+        anotarFallo(SOLO_PIN, ahora, config.BLOQUEO_SOLO_PIN_MS);
+        return { ok: false, error: 'PIN incorrecto' };
+    }
+    if (duenos.length > 1) {
+        console.log('[store] PIN repetido en ' + duenos.map((u) => u.nombre).join(', '));
+        return { ok: false, error: 'PIN repetido: avise al administrador' };
+    }
+    if (duenos[0].activo === false) {
+        return { ok: false, error: 'Usuario desactivado' };
+    }
+    olvidarFallos(SOLO_PIN);
+    return { ok: true, usuario: duenos[0].nombre };
 }
 
 export function activarUsuario(nombre, activo) {
@@ -831,8 +912,8 @@ export function esperaPorIntentos(nombre, ahora) {
     return reg && reg.hasta > t ? Math.ceil((reg.hasta - t) / 60000) : 0;
 }
 
-/** Suma un fallo; al llegar al máximo bloquea ese nombre un rato. */
-export function anotarFallo(nombre, ahora) {
+/** Suma un fallo; al llegar al máximo bloquea ese nombre un rato (`ms`, o el de siempre). */
+export function anotarFallo(nombre, ahora, ms) {
     const t = typeof ahora === 'number' ? ahora : Date.now();
     const n = normalizarUsuario(nombre);
     const reg = intentos.get(n);
@@ -840,7 +921,7 @@ export function anotarFallo(nombre, ahora) {
     const r = reg && reg.hasta === 0 ? reg : { fallos: 0, hasta: 0 };
     r.fallos += 1;
     if (r.fallos >= config.INTENTOS_MAX) {
-        r.hasta = t + config.BLOQUEO_INTENTOS_MS;
+        r.hasta = t + (ms || config.BLOQUEO_INTENTOS_MS);
         r.fallos = 0;
     }
     intentos.set(n, r);

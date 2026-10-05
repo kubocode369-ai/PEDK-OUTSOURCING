@@ -12,6 +12,11 @@ export const config = {
     /** Largo mínimo y máximo de los PIN (de persona y de administrador). */
     PIN_MIN: 4,
     PIN_MAX: 8,
+    /**
+     * Con "Entrada: sólo PIN" el PIN de cada persona tiene justo estos dígitos (el panel
+     * entra solo al marcar el último) y no se puede repetir entre personas.
+     */
+    PIN_SOLO: 4,
 
     /** Nombre de usuario: minúsculas, dígitos y . _ - */
     USUARIO_MAX: 20,
@@ -33,6 +38,11 @@ export const config = {
     /** Intentos fallidos seguidos antes de bloquear a ese usuario un rato. */
     INTENTOS_MAX: 5,
     BLOQUEO_INTENTOS_MS: 5 * 60 * 1000,
+    /**
+     * Con sólo PIN los fallos no tienen nombre y el bloqueo es para TODOS: más corto,
+     * para que quien pruebe PIN al azar no deje la impresora parada mucho rato.
+     */
+    BLOQUEO_SOLO_PIN_MS: 60 * 1000,
 
     /** Minutos sin actividad que dura una sesión, a elegir en Ajustes. */
     MINUTOS_SESION_OPCIONES: [2, 3, 5, 10],

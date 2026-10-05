@@ -119,8 +119,9 @@ function renderInicio() {
         w.push(etiqueta('aviso', 12, 66, 456, 20, recortar(alerta, 62), COLOR.peligro, 'center'));
     }
     const pasos = a.modo === 'sesion'
-        ? ['1. Entre con su usuario y PIN', '2. Imprima desde su PC', '3. Pulse Terminar al acabar']
-        : ['1. En su PC: "Impresión segura", con su usuario y PIN', '2. Aquí: Entrar con el mismo usuario y PIN', '3. Elija qué imprimir'];
+        ? [a.soloPin ? '1. Pulse Entrar y marque su PIN' : '1. Entre con su usuario y PIN', '2. Imprima desde su PC', '3. Pulse Terminar al acabar']
+        : ['1. En su PC: "Impresión segura", con su usuario y PIN',
+            a.soloPin ? '2. Aquí: Entrar y marque su PIN' : '2. Aquí: Entrar con el mismo usuario y PIN', '3. Elija qué imprimir'];
     pasos.forEach((p, i) => w.push(etiqueta('paso' + i, 60, 92 + i * 22, 400, 20, p, COLOR.suave)));
     w.push(boton('entrar', 90, 164, 300, 56, 'Entrar', COLOR.ok, irUsuario));
     w.push(etiqueta('msg', 12, 232, 456, 22, recortar(mensaje, 62), colorMensaje, 'center'));
@@ -171,7 +172,18 @@ function irUsuario() {
     usuarioEscrito = '';
     pinParaAdmin = false;
     decir('', COLOR.suave);
+    if (store.ajustes().soloPin) {
+        // Sin usuario: el PIN dice quién es (store.validarPin).
+        pinEscrito = '';
+        mostrar('pin', renderPin);
+        return;
+    }
     mostrar('usuario', renderUsuario);
+}
+
+/** ¿Se entra sólo con el PIN? Nunca para el administrador. */
+function entradaSoloPin() {
+    return !pinParaAdmin && !!store.ajustes().soloPin;
 }
 
 function renderUsuario() {
@@ -206,14 +218,14 @@ function renderUsuario() {
 function renderPin() {
     ambito('pin');
     const w = [pantalla()];
-    w.push(etiqueta('t', 12, 8, 456, 22, pinParaAdmin ? 'PIN de administrador' : 'PIN de ' + recortar(usuarioEscrito, 24),
-        COLOR.texto, 'center'));
+    w.push(etiqueta('t', 12, 8, 456, 22, pinParaAdmin ? 'PIN de administrador'
+        : entradaSoloPin() ? 'Marque su PIN' : 'PIN de ' + recortar(usuarioEscrito, 24), COLOR.texto, 'center'));
     w.push(etiqueta('v', 140, 40, 200, 30, '*'.repeat(pinEscrito.length), COLOR.acento, 'center'));
     w.push(...tecladoNumerico('np', 90, 80, teclaPin));
     w.push(etiqueta('msg', 12, 254, 456, 22, recortar(mensaje, 62), colorMensaje, 'center'));
     w.push(boton('volver', 12, 282, 110, 32, 'Volver', COLOR.suave, () => {
         decir('', COLOR.suave);
-        if (pinParaAdmin) {
+        if (pinParaAdmin || entradaSoloPin()) {
             irInicio();
         } else {
             mostrar('usuario', renderUsuario);
@@ -240,6 +252,11 @@ function teclaPin(t) {
         if (pinEscrito.length < config.PIN_MAX) {
             pinEscrito += t;
         }
+        // Con sólo PIN todos tienen los mismos dígitos: al marcar el último, entra solo.
+        if (entradaSoloPin() && pinEscrito.length === config.PIN_SOLO) {
+            entrarConPin();
+            return;
+        }
     } else {
         entrarConPin();
         return;
@@ -260,8 +277,9 @@ function entrarConPin() {
         abrirAjustes(irInicio);
         return;
     }
-    // Siempre se valida a la persona con su usuario y PIN de la app: el historial va a su nombre.
-    const v = store.validarUsuario(usuarioEscrito, pin);
+    // Siempre se valida a la persona con su PIN de la app (y su usuario, si se escribe):
+    // el historial va a su nombre.
+    const v = entradaSoloPin() ? store.validarPin(pin) : store.validarUsuario(usuarioEscrito, pin);
     if (!v.ok) {
         decir(v.error, COLOR.peligro);
         repintar();
@@ -544,6 +562,12 @@ function alTrabajo(e) {
     }
     // Un trabajo de impresión con 0 páginas es un seguro guardándose, no una hoja que salió.
     if (e.tipo === 'PRINT' && e.paginas === 0) {
+        return;
+    }
+    // Una copia o un escaneo cancelado sin una sola hoja tampoco cuenta: no salió nada
+    // (05-10-2026: un escaneo a USB cancelado al instante salía como un escaneo más).
+    if (!(e.paginas > 0)) {
+        console.log('[cuenta] #' + e.id + ' ' + e.tipo + ' 0 pág.' + (e.estado ? ' (' + e.estado + ')' : '') + ': no salió nada, no se cuenta');
         return;
     }
     const quien = sesion.quienUsa();

@@ -430,17 +430,19 @@ function paginaContadores(token, msg) {
 
 /*
  * contadores.js: pide el CSV por partes (el mismo que se descarga) y pinta la tabla.
- * Columnas del CSV: usuario;nombre;estado;impr;pág;copias;pág copia;escan;pág escan;total. Quien
- * no imprimió nada, en gris. Todo con textContent: nada se interpreta como HTML.
+ * Columnas del CSV: usuario;nombre;estado;impr;pág;copias;pág copia;escan;pág escan;total. La
+ * tabla enseña SÓLO HOJAS (pág., pág. copia, pág. escan., total): el número de trabajos
+ * confundía ("saqué dos copias y sale una", 05-10-2026) y sigue en el CSV. Quien no
+ * imprimió nada, en gris. Todo con textContent: nada se interpreta como HTML.
  */
 const CONTADORES_JS = '(function(){var T=document.getElementById("c"),s=T.getAttribute("data-s"),L=[];'
     + 'function e(t,x,c){var n=document.createElement(t);if(x!=null)n.textContent=x;if(c)n.className=c;return n}'
-    + 'function cab(){var r=e("tr");["Persona","Impr.","Pág.","Copias","Pág. copia","Escan.","Pág. escan.","Papel"].forEach(function(x,i){'
+    + 'function cab(){var r=e("tr");["Persona","Impresas","Copiadas","Escaneadas","Papel"].forEach(function(x,i){'
     + 'r.appendChild(e("th",x,i?"n":""))});T.appendChild(r)}'
     + 'function pinta(){cab();if(!L.length)return T.appendChild(e("tr")).appendChild(e("td","No hay usuarios ni nada contado."));'
     + 'L.forEach(function(f){var r=e("tr",null,+f[9]||+f[8]?"":"inactivo"),d=e("td"),x=f[2]=="borrado"?"usuario borrado":f[1]+(f[2]=="desactivado"?" (desactivado)":"");'
     + 'd.appendChild(e("b",f[0]));if(x){d.appendChild(e("br"));d.appendChild(e("small",x))}r.appendChild(d);'
-    + '[3,4,5,6,7,8].forEach(function(i){r.appendChild(e("td",f[i],"n"))});d=e("td",null,"n");d.appendChild(e("b",f[9]));r.appendChild(d);T.appendChild(r)})}'
+    + '[4,6,8].forEach(function(i){r.appendChild(e("td",f[i],"n"))});d=e("td",null,"n");d.appendChild(e("b",f[9]));r.appendChild(d);T.appendChild(r)})}'
     + 'function q(x){var m=/^SIGUIENTE;(-?\\d+)\\n/.exec(x);if(!m){T.textContent="La sesión caducó, vuelva a entrar.";return}'
     + 'x.slice(m[0].length).split("\\n").forEach(function(l){var f=l.split(";");if(f.length>9&&f[0]!="Usuario"&&f[0]!="TOTAL")L.push(f)});'
     + 'if(+m[1]>=0)p(+m[1]);else pinta()}'
@@ -518,7 +520,7 @@ function paginaNuevo(token, msg, previo) {
             + escapar((previo && previo.nombre) || '') + '">')
         + campo('PIN', campoPin()) + camposDatos(previo) + '<p><button class="p">Dar de alta</button></p>')
         + '<p class="k">Usuario: minúsculas, números y . _ - (el Nombre del driver). PIN: '
-        + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos (la Contraseña del driver). '
+        + store.reglaPin().toLowerCase() + ' (la Contraseña del driver). '
         + 'El nombre completo es opcional.</p>'), ['usuarios', 'Usuarios']);
 }
 
@@ -566,9 +568,10 @@ function botonA(valor, texto, clase, confirmar) {
 function paginaAjustes(token, msg) {
     const a = store.ajustes();
     const b = cerradura.impresionBloqueada();
+    // Sin </option> ni </th></td></tr>: HTML los cierra solo, y esta página va justa de bytes.
     const minutos = config.MINUTOS_SESION_OPCIONES.map((m) => '<option' + (m === a.minutosSesion ? ' selected' : '')
-        + '>' + m + '</option>').join('');
-    const fila = (nombre, valor, boton) => '<tr><th>' + nombre + '</th><td><b>' + valor + '</b> ' + boton + '</td></tr>';
+        + '>' + m).join('');
+    const fila = (nombre, valor, boton) => '<tr><th>' + nombre + '<td><b>' + valor + '</b> ' + boton;
     return documento('Ajustes', token, 'ajustes', mensajeHtml(msg) + panel('Protección', formulario(token, 'ajuste',
         '<table>'
         + fila('Modo', a.modo === 'retencion' ? 'retención' : 'sesión',
@@ -577,6 +580,7 @@ function paginaAjustes(token, msg) {
             ? botonA('bloqueo', 'Apagar', 'x', '¿Apagar el bloqueo?') : botonA('bloqueo', 'Encender', 'p'))
         + fila('Copia', a.bloquearCopia ? 'con PIN' : 'libre', botonA('copia', a.bloquearCopia ? 'Libre' : 'Con PIN'))
         + fila('Escaneo', a.bloquearEscaneo ? 'con PIN' : 'libre', botonA('escaneo', a.bloquearEscaneo ? 'Libre' : 'Con PIN'))
+        + fila('Entrada', a.soloPin ? 'sólo PIN' : 'usuario+PIN', botonA('entrada', a.soloPin ? 'Usuario+PIN' : 'Sólo PIN'))
         + fila('Sesión', '<select name="minutos">' + minutos + '</select> min', botonA('minutos', 'Guardar'))
         // En retención la impresión desde PC está siempre abierta (la vigila el guardián):
         // sólo informa en modo sesión.
@@ -627,6 +631,7 @@ function hacerAjuste(d) {
         case 'bloqueo': return acciones.fijarBloqueo(!a.bloqueoActivo);
         case 'copia': return acciones.fijarBloqueoCopia(!a.bloquearCopia);
         case 'escaneo': return acciones.fijarBloqueoEscaneo(!a.bloquearEscaneo);
+        case 'entrada': return acciones.fijarSoloPin(!a.soloPin);
         case 'minutos': return acciones.fijarMinutosSesion(d.minutos);
         case 'desbloquear': return acciones.desbloquearTodo();
         default: return { ok: false, texto: 'Acción desconocida.' };
@@ -1151,9 +1156,9 @@ export function atenderRuta(p, ahora) {
             const r = store.cambiarDatosUsuario(nombre, { nombreCompleto: d.nombreCompleto, correo: d.correo });
             msg = r.ok ? { ok: true, texto: 'Datos guardados.' } : { ok: false, texto: r.error };
         } else if (d.a === 'pin') {
-            msg = store.pinValido(d.pin) && store.cambiarPinUsuario(nombre, d.pin)
-                ? { ok: true, texto: 'PIN cambiado. Cámbielo también en el driver de su PC.' }
-                : { ok: false, texto: 'PIN de ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos.' };
+            const r = store.fijarPinUsuario(nombre, d.pin);
+            msg = r.ok ? { ok: true, texto: 'PIN cambiado. Cámbielo también en el driver de su PC.' }
+                : { ok: false, texto: r.error + '.' };
         } else if (d.a === 'activar' || d.a === 'desactivar') {
             store.activarUsuario(nombre, d.a === 'activar');
             msg = { ok: true, texto: nombre + (d.a === 'activar' ? ' activado.' : ' desactivado.') };

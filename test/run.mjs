@@ -724,6 +724,49 @@ hablar(); console.log('· Guardián: sólo se imprime con usuario y PIN'); silen
 }
 
 /* ------------------------------------------------------------------ */
+hablar(); console.log('· Entrada con sólo PIN'); silenciar();
+{
+    equipo();
+    store.agregarUsuario('ana', '4321');
+    store.agregarUsuario('beto', '4321');
+    store.agregarUsuario('caro', '123456');
+    hablar();
+    check('viene apagada de fábrica', store.ajustes().soloPin === false);
+    check('apagada, dos personas pueden tener el mismo PIN (como hasta ahora)', store.usuarios().length === 3);
+    store.cambiarAjuste('soloPin', true);
+    let r = store.agregarUsuario('dani', '12345');
+    check('encendida, el PIN de una persona nueva es de ' + config.PIN_SOLO + ' dígitos', !r.ok && /4 dígitos/.test(r.error), r.error);
+    r = store.agregarUsuario('dani', '4321');
+    check('y no puede ser el de otra persona', !r.ok && /otra persona/.test(r.error), r.error);
+    check('uno libre sí vale', store.agregarUsuario('dani', '2468').ok);
+    check('el PIN solo dice quién es', store.validarPin('2468').usuario === 'dani');
+    r = store.validarPin('4321');
+    check('un PIN que tienen dos (de antes de encenderla) no abre la sesión de nadie', !r.ok && /repetido/.test(r.error), r.error);
+    check('cambiar el PIN a uno ajeno no se deja', !store.fijarPinUsuario('dani', '4321').ok);
+    check('volver a poner el suyo propio sí', store.fijarPinUsuario('dani', '2468').ok);
+    check('arreglado el repetido, entra la persona correcta',
+        store.fijarPinUsuario('beto', '1357').ok && store.validarPin('4321').usuario === 'ana' && store.validarPin('1357').usuario === 'beto');
+    const imp = store.importarUsuarios([{ fila: 2, usuario: 'eli', pin: '9753' }, { fila: 3, usuario: 'fer', pin: '9753' }]);
+    check('al importar, el segundo con el mismo PIN se rechaza', imp.creados === 1 && imp.errores.length === 1
+        && /otra persona/.test(imp.errores[0].error), JSON.stringify(imp));
+    store.activarUsuario('ana', false);
+    check('una persona desactivada no entra', /desactivado/.test(store.validarPin('4321').error));
+    store.activarUsuario('ana', true);
+    const t0 = 5000000;
+    for (let i = 0; i < config.INTENTOS_MAX; i++) store.validarPin('0000', t0);
+    r = store.validarPin('2468', t0 + 1000);
+    check('tras ' + config.INTENTOS_MAX + ' fallos espera aunque el PIN sea bueno', !r.ok && /intentos/.test(r.error), r.error);
+    check('y la espera es corta (' + config.BLOQUEO_SOLO_PIN_MS / 1000 + ' s)', store.validarPin('2468', t0 + config.BLOQUEO_SOLO_PIN_MS + 1).ok);
+    check('la regla que se enseña cambia con el ajuste', /distinto/.test(store.reglaPin()));
+    store._recargar();
+    check('el ajuste sobrevive a reiniciar la app', store.ajustes().soloPin === true);
+    store.cambiarAjuste('soloPin', false);
+    check('apagada, todo vuelve a ser como antes', store.agregarUsuario('gabi', '1357').ok && store.validarUsuario('gabi', '1357').ok
+        && /De 4 a 8/.test(store.reglaPin()));
+    silenciar();
+}
+
+/* ------------------------------------------------------------------ */
 hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); silenciar();
 {
     historial.detener();
@@ -837,6 +880,15 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     await esperar(config.HISTORIAL_CON_SESION_MS + 700);
     hablar();
     check('no cuenta trabajos viejos que afloran al activar el registro', store.contadorDe('ana').paginas === 3, JSON.stringify(store.contadorDe('ana')));
+    silenciar();
+
+    // Un escaneo o una copia cancelados sin una hoja no son un trabajo hecho (05-10-2026).
+    mock.imprimir({ tipo: 'SCAN', paginas: 0, estado: 'CANCELLED' });
+    mock.imprimir({ tipo: 'COPY', paginas: 0, estado: 'CANCELLED' });
+    await esperar(config.HISTORIAL_CON_SESION_MS + 700);
+    hablar();
+    check('un escaneo o una copia cancelados sin hojas no se cuentan',
+        store.contadorDe('ana').escaneos === 0 && store.contadorDe('ana').copias === 0, JSON.stringify(store.contadorDe('ana')));
     silenciar();
 
     mock.imprimir({ tipo: 'PRINT', paginas: 2 });
@@ -964,6 +1016,46 @@ hablar(); console.log('· Recorrido completo por el panel (modo sesión)'); sile
     silenciar();
     historial.detener();
 
+    // Entrada con sólo PIN: la persona no escribe su usuario, el PIN dice quién es.
+    equipo({ retencion: { KuboC: [{ doc: 'ric', pin: '1234' }, { doc: 'eva', pin: '5678' }] } });
+    store.agregarUsuario('ric', '1234');
+    store.agregarUsuario('eva', '5678');
+    store.cambiarAjuste('modo', 'retencion');
+    (await import('./.build/acciones.mjs')).fijarSoloPin(true);
+    mock.pulsar('entrar');
+    hablar();
+    check('sólo PIN: Entrar pide el PIN directamente', /Marque su PIN/.test(mock.textos()) && !/Su usuario/.test(mock.textos()), mock.textos());
+    silenciar();
+    teclear('0000');
+    hablar();
+    check('un PIN que no es de nadie no entra', /PIN incorrecto/.test(mock.textos()) && !sesion.activa(), mock.textos());
+    silenciar();
+    teclear('5678');
+    hablar();
+    check('al marcar el 4º dígito entra solo, como la dueña del PIN', sesion.activa() && sesion.usuario() === 'eva'
+        && /eva · 1 documento/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('terminar');
+    mock.pulsar('entrar');
+    mock.pulsar('volver');
+    hablar();
+    check('Volver lleva al inicio, que explica la entrada', /Entrar y marque su PIN/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('ajustes');
+    teclear(config.PIN_ADMIN_FABRICA);
+    hablar();
+    check('el PIN de admin NO entra solo a los 4 dígitos: espera a OK', /PIN de administrador/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('OK');
+    hablar();
+    check('Ajustes enseña la entrada actual', /Entrada: sólo PIN/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('entrada');
+    hablar();
+    check('y el botón la vuelve a usuario y PIN', !store.ajustes().soloPin && /Entrada: usuario\+PIN/.test(mock.textos()), mock.textos());
+    silenciar();
+    mock.pulsar('salir');
+
     // Mismo panel, otro equipo: uno que acepta la orden y no bloquea.
     const { abrirAjustes } = await import('./.build/ajustes.mjs');
     equipo({ ignora: ['FUNC_T_NET_PRINT'] });
@@ -1006,13 +1098,14 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         };
         new Function(...Object.keys(ctx), pedir('/contadores.js').body)(...Object.values(ctx));
         await esperar(30);
-        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 8 && r.children[0].tag === 'td').map((r) => ({
+        const filas = T.children.filter((r) => r.tag === 'tr' && r.children.length === 5 && r.children[0].tag === 'td').map((r) => ({
             nombre: r.children[0].children[0].textContent,
             detalle: (r.children[0].children[2] || {}).textContent || '',
             celdas: r.children.slice(1).map((c) => (c.children[0] || c).textContent),
             clase: r.className,
         }));
-        return { filas, mayor, texto: T.textContent };
+        const cab = T.children.filter((r) => r.tag === 'tr' && r.children[0] && r.children[0].tag === 'th')[0];
+        return { filas, mayor, texto: T.textContent, cabecera: cab ? cab.children.map((c) => c.textContent).join('|') : '' };
     };
     /** Una copia con `n` personas del tamaño de las reales (nombre, contadores). */
     const copiaDe = (n) => {
@@ -1183,7 +1276,11 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         && web.bytesUtf8(pedir('/contadores', 'GET', 's=' + s3).body) <= config.WEB_MAX_BYTES, vc.mayor);
     check('contadores: salen TODOS en una sola página', vc.filas.length === store.contadoresDeTodos().length,
         vc.filas.length + ' de ' + store.contadoresDeTodos().length);
-    check('quien no se identificó sale como "Sin identificar"', vc.filas.some((f) => f.nombre === 'Sin identificar' && f.celdas[6] === '7'));
+    check('quien no se identificó sale como "Sin identificar"', vc.filas.some((f) => f.nombre === 'Sin identificar' && f.celdas[0] === '7' && f.celdas[3] === '7'));
+    check('la tabla enseña sólo hojas: impresas, copiadas, escaneadas y papel', vc.cabecera === 'Persona|Impresas|Copiadas|Escaneadas|Papel', vc.cabecera);
+    const conCopia = vc.filas.filter((f) => f.celdas[1] !== '0')[0];
+    check('las copias salen en hojas, no en veces', conCopia && conCopia.celdas[0] === '0' && conCopia.celdas[3] === conCopia.celdas[1],
+        JSON.stringify(conCopia));
 
     // El CSV lo junta el navegador: se ejecuta el script de verdad con fetch simulado.
     const js = pedir('/csv.js').body;
@@ -1285,13 +1382,18 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
     acciones.alCambiar(() => { avisos++; });
     const aj = pedir('/ajustes', 'GET', 's=' + sA).body;
     check('la página de ajustes cabe y enseña modo y bloqueo', web.bytesUtf8(aj) <= config.WEB_MAX_BYTES
-        && /Modo<\/th><td><b>sesión/.test(aj) && /Bloqueo<\/th><td><b>apagado/.test(aj), web.bytesUtf8(aj));
+        && /Modo<td><b>sesión/.test(aj) && /Bloqueo<td><b>apagado/.test(aj), web.bytesUtf8(aj));
     pedir('/ajuste', 'GET', 's=' + sA + '&a=bloqueo');
     check('por GET no cambia ningún ajuste', !store.ajustes().bloqueoActivo);
     resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=bloqueo');
     check('encender el bloqueo desde la web bloquea el equipo de verdad',
-        store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === true && /Bloqueo<\/th><td><b>ENCENDIDO/.test(resp.body), resp.body.slice(-300));
+        store.ajustes().bloqueoActivo && cerradura.impresionBloqueada() === true && /Bloqueo<td><b>ENCENDIDO/.test(resp.body), resp.body.slice(-300));
     check('y avisa al panel para que repinte', avisos > 0);
+    resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=entrada');
+    check('la entrada con sólo PIN se enciende desde la web', store.ajustes().soloPin && /Entrada<td><b>sólo PIN/.test(resp.body), resp.body.slice(-400));
+    check('y la página de alta enseña la regla del PIN', /distinto para cada persona/.test(pedir('/nuevo', 'GET', 's=' + sA).body));
+    pedir('/ajuste', 'POST', 's=' + sA + '&a=entrada');
+    check('y se apaga igual', !store.ajustes().soloPin);
     resp = pedir('/ajuste', 'POST', 's=' + sA + '&a=modo');
     check('pasar a retención reabre la impresión desde PC (si no, no llegan los documentos)',
         store.ajustes().modo === 'retencion' && cerradura.impresionBloqueada() === false, resp.body.slice(-300));
@@ -1669,6 +1771,7 @@ hablar(); console.log('· Panel web servido por la impresora'); silenciar();
         store.agregarUsuario(largo, '1234', { nombreCompleto: 'Ñ'.repeat(config.NOMBRE_COMPLETO_MAX), cedula: '123456789012345' });
         (await import('./.build/acciones.mjs')).fijarBloqueo(true);
         store.cambiarAjuste('bloquearCopia', true);
+        store.cambiarAjuste('soloPin', true);   // sus textos de la regla del PIN son los más largos
         const tP = token(pedir('/entrar', 'POST', 'pin=' + config.PIN_ADMIN_FABRICA).body);
         sesion.abrir(largo, '1234');   // para los mensajes largos de "persona usando la impresora"
         const peores = [

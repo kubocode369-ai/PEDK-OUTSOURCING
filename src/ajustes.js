@@ -25,7 +25,7 @@ let colorMensaje = COLOR.suave;
 let borrador = '';
 let pinPaso = 1;
 let pinPrimero = '';
-let pinDestino = null;   // {titulo, guardar(pin) -> {ok, error}}
+let pinDestino = null;   // {titulo, guardar(pin) -> {ok, error}, regla?() -> texto}
 let confirmar = null;    // clave de la acción que pide un segundo toque
 
 export function abrirAjustes(salir) {
@@ -100,6 +100,8 @@ function renderMenu() {
         guardar: (p) => (store.cambiarPinAdmin(p) ? { ok: true } : { ok: false, error: 'PIN no válido' }),
     })));
     w.push(boton('abrir', col(1), fila(4), W, H, 'Desbloquear equipo', COLOR.peligro, desbloquearTodo));
+    w.push(boton('entrada', col(0), fila(5), W, H, a.soloPin ? 'Entrada: sólo PIN' : 'Entrada: usuario+PIN',
+        COLOR.acento, alternarSoloPin));
 
     const aviso = !store.pinAdminDeFabrica() ? estadoCerradura()
         : store.pinRestablecido() ? 'PIN restablecido por Soprint el ' + store.pinRestablecido().slice(0, 10) + ': cámbielo'
@@ -143,6 +145,10 @@ function alternarEscaneo() {
     contar(acciones.fijarBloqueoEscaneo(!store.ajustes().bloquearEscaneo));
 }
 
+function alternarSoloPin() {
+    contar(acciones.fijarSoloPin(!store.ajustes().soloPin));
+}
+
 function desbloquearTodo() {
     contar(acciones.desbloquearTodo());
 }
@@ -167,7 +173,8 @@ function renderUsuarios() {
         w.push(etiqueta('n' + k, 12, y + 8, 150, 20, recortar(k, 16), u.activo === false ? COLOR.tenue : COLOR.texto));
         w.push(boton('p' + k, 166, y + 2, 90, 32, 'PIN', COLOR.acento, () => pedirPin({
             titulo: 'Nuevo PIN de ' + k,
-            guardar: (p) => (store.cambiarPinUsuario(k, p) ? { ok: true } : { ok: false, error: 'PIN no válido' }),
+            guardar: (p) => store.fijarPinUsuario(k, p),
+            regla: store.reglaPin,
             volverA: 'usuarios',
         })));
         w.push(boton('a' + k, 262, y + 2, 100, 32, u.activo === false ? 'Activar' : 'Desactivar', COLOR.acento, () => {
@@ -219,6 +226,7 @@ function renderNombre() {
         pedirPin({
             titulo: 'PIN de ' + n,
             guardar: (p) => store.agregarUsuario(n, p),
+            regla: store.reglaPin,
             volverA: 'usuarios',
         });
     }));
@@ -255,7 +263,8 @@ function renderPin() {
     const w = [pantalla()];
     w.push(etiqueta('t', 12, 8, 456, 22, recortar(pinDestino.titulo, 40), COLOR.texto, 'center'));
     w.push(etiqueta('h', 12, 30, 456, 18,
-        pinPaso === 1 ? 'De ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos' : 'Repítalo para confirmar',
+        pinPaso === 1 ? (pinDestino.regla ? pinDestino.regla() : 'De ' + config.PIN_MIN + ' a ' + config.PIN_MAX + ' dígitos')
+            : 'Repítalo para confirmar',
         COLOR.tenue, 'center'));
     w.push(etiqueta('v', 140, 50, 200, 26, '*'.repeat(borrador.length), COLOR.acento, 'center'));
     w.push(...tecladoNumerico('np', 90, 80, teclaPin));

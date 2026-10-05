@@ -141,6 +141,19 @@ export function fijarBloqueoEscaneo(bloquear) {
 }
 
 /**
+ * Entrar sólo con el PIN, sin escribir el usuario. No toca el equipo: sólo cambia la
+ * pantalla de entrada. Los PIN que ya existen no se pueden comprobar (se guardan
+ * mezclados con el nombre), así que se recuerda la regla: si dos coinciden, el panel
+ * no deja entrar a ninguno de los dos.
+ */
+export function fijarSoloPin(activo) {
+    store.cambiarAjuste('soloPin', !!activo);
+    avisar();
+    return activo ? res(true, 'Sólo PIN: cada PIN de ' + config.PIN_SOLO + ' dígitos y distinto', 'aviso')
+        : res(true, 'Entrada con usuario y PIN');
+}
+
+/**
  * La carpeta compartida a donde van los escaneos. Pasar algo sin servidor la quita,
  * y entonces nadie ve "Mi carpeta".
  */
